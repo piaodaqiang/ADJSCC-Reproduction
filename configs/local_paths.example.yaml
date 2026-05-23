@@ -1,0 +1,5 @@
+data_root: "D:/Research/ai-data/datasets"
+cifar10_root: "D:/Research/ai-data/datasets/CIFAR10"
+run_root: "D:/Research/ai-data/runs/ADJSCC"
+checkpoint_root: "D:/Research/ai-data/checkpoints/ADJSCC"
+cache_root: "D:/Research/ai-data/cache/ADJSCC"

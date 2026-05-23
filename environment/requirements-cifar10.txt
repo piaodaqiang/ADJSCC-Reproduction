@@ -1,0 +1,7 @@
+# Initial placeholder for CIFAR-10 reproduction dependencies.
+# Pin versions only after confirming compatibility with the official ADJSCC code.
+
+numpy
+matplotlib
+pyyaml
+scikit-image

@@ -1,0 +1,20 @@
+experiment_name: "cifar10_minimal_smoke"
+dataset: "CIFAR10"
+data_root: "D:/Research/ai-data/datasets/CIFAR10"
+run_root: "D:/Research/ai-data/runs/ADJSCC"
+checkpoint_root: "D:/Research/ai-data/checkpoints/ADJSCC"
+
+phase: "smoke_test"
+notes: "Load CIFAR-10, build the model, and run only a tiny validation before long training."
+
+training:
+  batch_size: 128
+  max_steps: 10
+  long_training: false
+
+channel:
+  type: "AWGN"
+  snr_db: 10
+
+reproducibility:
+  seed: 2026
