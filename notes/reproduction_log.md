@@ -112,6 +112,66 @@ Next step:
 - Ask the user whether to allow CIFAR-10 download or provide an existing local CIFAR-10 copy under `/mnt/d/Research/ai-data/datasets/CIFAR10`.
 - Only after that confirmation, plan a tiny real-data smoke test with explicit limits and logging.
 
+## 2026-05-26
+
+### CIFAR-10 data gate check
+
+Status: CIFAR-10 data gate mode has been added and `--cifar10-check` has been run. This is not a paper reproduction result, not a training result, and not a successful real CIFAR-10 smoke result.
+
+Evidence source: experiment execution Agent report and latest Git commit `4e50056 feat: add CIFAR-10 data gate smoke modes`.
+
+Changed files:
+
+- `src/repro/cifar10_smoke.py`
+- `scripts/run_cifar10_smoke.ps1`
+
+New wrapper modes:
+
+- `--cifar10-check`
+- `--real-batch-forward`
+
+Command run:
+
+```bash
+/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/bin/python -m src.repro.cifar10_smoke --cifar10-check
+```
+
+Data gate result:
+
+- CIFAR-10 dataset directory exists: `/mnt/d/Research/ai-data/datasets/CIFAR10`.
+- No recognizable CIFAR-10 data files were found.
+- Missing or unrecognized expected entries:
+  - `cifar-10-python.tar.gz`
+  - `cifar-10-batches-py`
+  - `data_batch_1`
+  - `data_batch_2`
+  - `data_batch_3`
+  - `data_batch_4`
+  - `data_batch_5`
+  - `test_batch`
+  - `batches.meta`
+
+Safety boundary confirmed:
+
+- No `tf.keras.datasets.cifar10.load_data()` call was found.
+- No `model.fit()` call was found.
+- No `save_weights()` call was found.
+- CIFAR-10 was not downloaded.
+- ImageNet was not downloaded.
+- Model weights were not downloaded.
+- Training was not run.
+- No checkpoint was saved.
+- `external/ADJSCC` was not modified.
+
+Current blocker:
+
+- Local CIFAR-10 data is not present in a recognizable format, so `--real-batch-forward` has not been run and should not be run yet.
+
+Next step:
+
+- Ask the user to confirm whether to download CIFAR-10 or provide an existing local CIFAR-10 copy.
+- After CIFAR-10 availability is confirmed, let the experiment execution Agent run `--real-batch-forward` with strict no-training and no-checkpoint boundaries.
+
 ## Experiment Template
 
 ```text
