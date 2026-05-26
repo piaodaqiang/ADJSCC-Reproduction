@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import pickle
 import sys
+import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -18,6 +20,17 @@ from typing import Iterable
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_ROOT = PROJECT_ROOT / "external" / "ADJSCC"
 DEFAULT_CIFAR10_DIR = Path("/mnt/d/Research/ai-data/datasets/CIFAR10")
+CIFAR10_BATCH_DIR = "cifar-10-batches-py"
+CIFAR10_ARCHIVE = "cifar-10-python.tar.gz"
+CIFAR10_REQUIRED_FILES = (
+    "data_batch_1",
+    "data_batch_2",
+    "data_batch_3",
+    "data_batch_4",
+    "data_batch_5",
+    "test_batch",
+    "batches.meta",
+)
 
 
 @dataclass(frozen=True)
@@ -28,6 +41,25 @@ class RuntimeModules:
     np: object
     util_module: object
     util_channel: object
+
+
+@dataclass(frozen=True)
+class Cifar10Inventory:
+    root: Path
+    root_exists: bool
+    archive_path: Path
+    batch_dir: Path
+    archive_exists: bool
+    batch_dir_exists: bool
+    recognized_files: tuple[Path, ...]
+
+    @property
+    def has_data_batch_1(self) -> bool:
+        return any(path.name == "data_batch_1" for path in self.recognized_files)
+
+    @property
+    def is_usable_for_real_batch(self) -> bool:
+        return self.has_data_batch_1 or self.archive_exists
 
 
 def _path_is_inside(path: Path, parent: Path) -> bool:
@@ -106,6 +138,67 @@ def _iter_cifar10_candidates(root: Path, max_items: int = 30) -> Iterable[Path]:
     return candidates
 
 
+def inspect_cifar10_dir(root: Path) -> Cifar10Inventory:
+    """Inspect local CIFAR-10 files without calling Keras download helpers."""
+
+    archive_path = root / CIFAR10_ARCHIVE
+    batch_dir = root / CIFAR10_BATCH_DIR
+    recognized: list[Path] = []
+    if root.exists() and root.is_dir():
+        if archive_path.exists():
+            recognized.append(archive_path)
+        if batch_dir.exists():
+            recognized.append(batch_dir)
+        for name in CIFAR10_REQUIRED_FILES:
+            path = batch_dir / name
+            if path.exists():
+                recognized.append(path)
+            root_level_path = root / name
+            if root_level_path.exists():
+                recognized.append(root_level_path)
+
+    return Cifar10Inventory(
+        root=root,
+        root_exists=root.exists(),
+        archive_path=archive_path,
+        batch_dir=batch_dir,
+        archive_exists=archive_path.exists(),
+        batch_dir_exists=batch_dir.exists(),
+        recognized_files=tuple(recognized),
+    )
+
+
+def print_cifar10_inventory(inventory: Cifar10Inventory) -> None:
+    print("== CIFAR-10 data gate ==")
+    _print_item("cifar10_dir", inventory.root)
+    _print_item("cifar10_dir_exists", inventory.root_exists)
+    _print_item("has_cifar10_archive", inventory.archive_exists)
+    _print_item("archive_path", inventory.archive_path)
+    _print_item("has_cifar10_batch_dir", inventory.batch_dir_exists)
+    _print_item("batch_dir", inventory.batch_dir)
+
+    print("required_batch_files:")
+    for name in CIFAR10_REQUIRED_FILES:
+        in_batch_dir = inventory.batch_dir / name
+        in_root = inventory.root / name
+        exists = in_batch_dir.exists() or in_root.exists()
+        print(f"- {name}: {exists}")
+
+    if inventory.recognized_files:
+        print("recognized_cifar10_files:")
+        for path in inventory.recognized_files:
+            print(f"- {path}")
+    else:
+        print("No recognizable CIFAR-10 files found.")
+
+    if inventory.is_usable_for_real_batch:
+        print("CIFAR-10 gate result: local CIFAR-10 data is recognizable.")
+    else:
+        print("CIFAR-10 gate result: local CIFAR-10 data is not recognizable.")
+        print("This wrapper will not download CIFAR-10 automatically.")
+        print("If you want to download CIFAR-10, confirm that as a separate step first.")
+
+
 def check_environment(modules: RuntimeModules, cifar10_dir: Path) -> None:
     tf = modules.tf
     tfc = modules.tfc
@@ -129,23 +222,8 @@ def check_environment(modules: RuntimeModules, cifar10_dir: Path) -> None:
     _print_item("util_module_origin", _module_origin(modules.util_module))
     _print_item("util_channel_origin", _module_origin(modules.util_channel))
 
-    print("\n== CIFAR-10 directory check ==")
-    _print_item("cifar10_dir", cifar10_dir)
-    _print_item("cifar10_dir_exists", cifar10_dir.exists())
-    if not cifar10_dir.exists():
-        print("No CIFAR-10 directory found. This wrapper will not download CIFAR-10 automatically.")
-        print("If you want to download CIFAR-10, confirm that as a separate step first.")
-        return
-
-    candidates = list(_iter_cifar10_candidates(cifar10_dir))
-    if candidates:
-        print("recognized_cifar10_files:")
-        for path in candidates:
-            print(f"- {path}")
-    else:
-        print("No recognizable CIFAR-10 files found in the configured directory.")
-        print("This wrapper will not download CIFAR-10 automatically.")
-        print("If you want to download CIFAR-10, confirm that as a separate step first.")
+    print()
+    print_cifar10_inventory(inspect_cifar10_dir(cifar10_dir))
 
 
 def build_model(modules: RuntimeModules, transmit_channel_num: int, learning_rate: float):
@@ -192,6 +270,77 @@ def run_fake_forward(modules: RuntimeModules, args: argparse.Namespace) -> None:
     print("Fake-forward completed. No dataset was loaded, no training was run, and no checkpoint was written.")
 
 
+def _load_pickled_cifar10_batch(batch_file) -> object:
+    return pickle.load(batch_file, encoding="latin1")
+
+
+def _read_data_batch_1_from_dir(root: Path):
+    batch_path = root / CIFAR10_BATCH_DIR / "data_batch_1"
+    if not batch_path.exists():
+        batch_path = root / "data_batch_1"
+    with batch_path.open("rb") as batch_file:
+        return _load_pickled_cifar10_batch(batch_file), batch_path
+
+
+def _read_data_batch_1_from_archive(archive_path: Path):
+    # Read from the tar.gz in memory only; this does not extract or write files.
+    with tarfile.open(archive_path, mode="r:gz") as archive:
+        member = archive.getmember(f"{CIFAR10_BATCH_DIR}/data_batch_1")
+        extracted = archive.extractfile(member)
+        if extracted is None:
+            raise FileNotFoundError(f"Cannot read data_batch_1 inside {archive_path}")
+        with extracted:
+            return _load_pickled_cifar10_batch(extracted), Path(member.name)
+
+
+def load_cifar10_batch_images(cifar10_dir: Path, batch_size: int, np_module: object):
+    inventory = inspect_cifar10_dir(cifar10_dir)
+    if not inventory.is_usable_for_real_batch:
+        raise FileNotFoundError(
+            "No local CIFAR-10 batch file was found. This wrapper will not download CIFAR-10 automatically."
+        )
+
+    if inventory.has_data_batch_1:
+        batch, source = _read_data_batch_1_from_dir(cifar10_dir)
+    else:
+        batch, source = _read_data_batch_1_from_archive(inventory.archive_path)
+
+    raw_data = batch.get("data") if isinstance(batch, dict) else None
+    if raw_data is None:
+        raise KeyError(f"CIFAR-10 batch from {source} does not contain a 'data' field.")
+    if len(raw_data) < batch_size:
+        raise ValueError(f"CIFAR-10 batch from {source} has fewer than {batch_size} images.")
+
+    images = np_module.asarray(raw_data[:batch_size], dtype="float32")
+    images = images.reshape(batch_size, 3, 32, 32).transpose(0, 2, 3, 1)
+    return images, source
+
+
+def run_real_batch_forward(modules: RuntimeModules, args: argparse.Namespace) -> None:
+    print("== Real-batch-forward ==")
+    inventory = inspect_cifar10_dir(args.cifar10_dir)
+    print_cifar10_inventory(inventory)
+    if not inventory.is_usable_for_real_batch:
+        print("Real-batch-forward stopped before model execution.")
+        print("Reason: local CIFAR-10 files were not found or not recognizable.")
+        print("This wrapper will not download CIFAR-10 automatically.")
+        print("If you want to download CIFAR-10, confirm that as a separate step first.")
+        return
+
+    images, source = load_cifar10_batch_images(args.cifar10_dir, args.batch_size, modules.np)
+    tf = modules.tf
+    model = build_model(modules, args.transmit_channel_num, args.learning_rate)
+    tf.random.set_seed(args.seed)
+    snr = tf.ones((args.batch_size, 1), dtype=tf.float32) * float(args.snr_db)
+    outputs = model([tf.convert_to_tensor(images, dtype=tf.float32), snr], training=False)
+    _print_item("cifar10_batch_source", source)
+    _print_item("real_input_shape", tuple(images.shape))
+    _print_item("snr_shape", tuple(snr.shape))
+    _print_item("real_output_shape", tuple(outputs.shape))
+    _print_item("real_output_dtype", outputs.dtype.name)
+    print("Real-batch-forward completed. No training was run, no checkpoint was written, and no data was downloaded.")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Safe ADJSCC CIFAR-10 smoke wrapper: checks imports, builds the model, or runs one fake forward pass."
@@ -200,6 +349,8 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--check-only", action="store_true", help="Only check runtime, imports, paths, and CIFAR-10 presence.")
     mode.add_argument("--build-only", action="store_true", help="Build the ADJSCC CIFAR-10 model without data or training.")
     mode.add_argument("--fake-forward", action="store_true", help="Run one tiny random-data forward pass without training.")
+    mode.add_argument("--cifar10-check", action="store_true", help="Only inspect local CIFAR-10 files without imports or downloads.")
+    mode.add_argument("--real-batch-forward", action="store_true", help="Run one tiny local CIFAR-10 batch forward pass without training.")
     parser.add_argument("--cifar10-dir", type=Path, default=DEFAULT_CIFAR10_DIR)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--snr-db", type=float, default=10.0)
@@ -211,12 +362,18 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    if not (args.check_only or args.build_only or args.fake_forward):
+    if not (args.check_only or args.build_only or args.fake_forward or args.cifar10_check or args.real_batch_forward):
         args.check_only = True
 
     print("ADJSCC CIFAR-10 smoke wrapper")
     print("Safety: no dataset download, no train/eval, no checkpoint write.")
     _ensure_project_context()
+
+    if args.cifar10_check:
+        print_cifar10_inventory(inspect_cifar10_dir(args.cifar10_dir))
+        print("\nCIFAR-10 check completed.")
+        return 0
+
     modules = _import_runtime_modules()
     check_environment(modules, args.cifar10_dir)
 
@@ -226,6 +383,9 @@ def main() -> int:
     elif args.fake_forward:
         print()
         run_fake_forward(modules, args)
+    elif args.real_batch_forward:
+        print()
+        run_real_batch_forward(modules, args)
     else:
         print("\nCheck-only completed.")
     return 0
