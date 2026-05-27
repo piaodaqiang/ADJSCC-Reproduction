@@ -172,6 +172,59 @@ Next step:
 - Ask the user to confirm whether to download CIFAR-10 or provide an existing local CIFAR-10 copy.
 - After CIFAR-10 availability is confirmed, let the experiment execution Agent run `--real-batch-forward` with strict no-training and no-checkpoint boundaries.
 
+## 2026-05-27
+
+### Real CIFAR-10 data forward smoke
+
+Status: `--real-batch-forward` passed with real CIFAR-10 data. This is a real-data forward smoke check only. It is not training, not a full paper reproduction result, and not a paper-metric reproduction.
+
+Evidence source: experiment execution Agent report.
+
+Command run:
+
+```bash
+/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/bin/python -m src.repro.cifar10_smoke --real-batch-forward
+```
+
+Data gate result:
+
+- CIFAR-10 data gate passed.
+- Recognized local CIFAR-10 archive:
+  `/mnt/d/Research/ai-data/datasets/CIFAR10/cifar-10-python.tar.gz`
+
+Forward smoke result:
+
+- Input batch shape: `(2, 32, 32, 3)`.
+- Output shape: `(2, 32, 32, 3)`.
+- The output has the same image shape as the input batch.
+
+Beginner note:
+
+- A forward pass means data flows through the model once, from input to output.
+- It does not update model parameters.
+- It does not teach or train the model.
+- This step is important because it shows that real CIFAR-10 images can enter the ADJSCC smoke wrapper and produce model output with the expected image dimensions.
+
+Safety boundary confirmed:
+
+- Training was not run.
+- No checkpoint was saved.
+- No new data was downloaded.
+- `external/ADJSCC` was not modified.
+- `git status --short` had no output before and after the run.
+
+Metrics:
+
+- No PSNR was produced.
+- No SSIM was produced.
+- No MS-SSIM was produced.
+- This cannot be written as a paper result or full reproduction.
+
+Next step:
+
+- The project can enter tiny-training planning, but should not directly start training.
+- Before any tiny training, define the training step count, output directory, checkpoint policy, logging format, and confirmation rules for writing training artifacts.
+
 ## Experiment Template
 
 ```text
