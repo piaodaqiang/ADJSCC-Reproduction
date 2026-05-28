@@ -225,6 +225,66 @@ Next step:
 - The project can enter tiny-training planning, but should not directly start training.
 - Before any tiny training, define the training step count, output directory, checkpoint policy, logging format, and confirmation rules for writing training artifacts.
 
+## 2026-05-28
+
+### 1-step tiny training smoke
+
+Status: `--tiny-train` has run for exactly 1 training step. This is a tiny training smoke check for the training pipeline. It is not formal training, not a full paper reproduction, and not a paper-metric result.
+
+Evidence source: experiment execution Agent report and code review Agent report.
+
+Command run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 /home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/bin/python -m src.repro.cifar10_smoke --tiny-train --max-steps 1 --batch-size 2
+```
+
+Training smoke result:
+
+- Training mode: `--tiny-train`.
+- Max steps: `1`.
+- Batch size: `2`.
+- Recorded loss: `tiny_train_step_1_loss: 3471.53759765625`.
+- CIFAR-10 data gate passed.
+- Input batch shape: `(2, 32, 32, 3)`.
+- Output shape: `(2, 32, 32, 3)`.
+
+Beginner notes:
+
+- Tiny training means a very small training trial. It is like lightly pressing the gas pedal once to confirm the car can move, not driving the full route.
+- Loss is an error number computed from the model output and the target. In this stage, the loss only proves that the training code can compute an error value.
+- `loss=3471.53759765625` does not mean the model quality is good or bad for the paper. It is only a pipeline smoke value.
+- One training step means the model only performs one tiny update. This checks whether the training path works, but it is far from formal training.
+- No checkpoint is still acceptable here because this stage is meant to verify the training link, not to save a reusable model.
+
+Safety boundary confirmed:
+
+- Training was run, but only for 1 step.
+- No long training was run.
+- No checkpoint was saved.
+- No new data was downloaded.
+- `external/ADJSCC` was not modified.
+- Official train/eval entrypoints were not run.
+- No PSNR was produced.
+- No SSIM was produced.
+- No MS-SSIM was produced.
+
+Code review notes:
+
+- Tiny training only runs when `--tiny-train` is explicitly passed.
+- Default mode is still `check-only`.
+- No `save_weights`, `model.save`, or `.save()` checkpoint write path was found for this stage.
+- `--save-checkpoint` exists, but currently stops with an error in this stage instead of saving a checkpoint.
+- No `tf.keras.datasets.cifar10.load_data()` call was found.
+- `max_steps` is limited from 1 to 10, and defaults to 1.
+- Run summary is written only when `--write-run-summary` is explicitly passed, and must stay under `/mnt/d/Research/ai-data/runs/ADJSCC`.
+
+Next step:
+
+- The project can plan a 5-step tiny training run or a run summary test.
+- Do not directly start formal training.
+- Before the next run, define whether run summaries are allowed, where outputs go, what evidence to collect, and whether checkpoint writing remains disabled.
+
 ## Experiment Template
 
 ```text

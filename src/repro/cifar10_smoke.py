@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import json
 import pickle
 import sys
 import tarfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -20,6 +22,8 @@ from typing import Iterable
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_ROOT = PROJECT_ROOT / "external" / "ADJSCC"
 DEFAULT_CIFAR10_DIR = Path("/mnt/d/Research/ai-data/datasets/CIFAR10")
+DEFAULT_RUN_ROOT = Path("/mnt/d/Research/ai-data/runs/ADJSCC")
+MAX_TINY_TRAIN_STEPS = 10
 CIFAR10_BATCH_DIR = "cifar-10-batches-py"
 CIFAR10_ARCHIVE = "cifar-10-python.tar.gz"
 CIFAR10_REQUIRED_FILES = (
@@ -340,6 +344,80 @@ def run_real_batch_forward(modules: RuntimeModules, args: argparse.Namespace) ->
     _print_item("real_output_dtype", outputs.dtype.name)
     print("Real-batch-forward completed. No training was run, no checkpoint was written, and no data was downloaded.")
 
+def run_tiny_train(modules: RuntimeModules, args: argparse.Namespace) -> None:
+    print("== Tiny-train ==")
+
+    if args.save_checkpoint:
+        raise RuntimeError("Tiny-train does not support checkpoint saving in this stage.")
+
+    if args.max_steps < 1 or args.max_steps > MAX_TINY_TRAIN_STEPS:
+        raise ValueError(f"--max-steps must be between 1 and {MAX_TINY_TRAIN_STEPS}.")
+
+    images, source = load_cifar10_batch_images(args.cifar10_dir, args.batch_size, modules.np)
+
+    tf = modules.tf
+    model = build_model(modules, args.transmit_channel_num, args.learning_rate)
+    loss_fn = tf.keras.losses.MeanSquaredError()
+    optimizer = model.optimizer
+
+    tf.random.set_seed(args.seed)
+
+    inputs = tf.convert_to_tensor(images, dtype=tf.float32)
+    targets = tf.convert_to_tensor(images, dtype=tf.float32)
+    snr = tf.ones((args.batch_size, 1), dtype=tf.float32) * float(args.snr_db)
+
+    losses: list[float] = []
+
+    for step in range(1, args.max_steps + 1):
+        with tf.GradientTape() as tape:
+            outputs = model([inputs, snr], training=True)
+            loss = loss_fn(targets, outputs)
+
+        gradients = tape.gradient(loss, model.trainable_variables)
+        grad_var_pairs = [
+            (grad, var)
+            for grad, var in zip(gradients, model.trainable_variables)
+            if grad is not None
+        ]
+
+        if not grad_var_pairs:
+            raise RuntimeError("No gradients were produced during tiny training.")
+
+        optimizer.apply_gradients(grad_var_pairs)
+
+        loss_value = float(loss.numpy())
+        losses.append(loss_value)
+        _print_item(f"tiny_train_step_{step}_loss", loss_value)
+
+    _print_item("cifar10_batch_source", source)
+    _print_item("tiny_train_input_shape", tuple(images.shape))
+    _print_item("snr_shape", tuple(snr.shape))
+    _print_item("tiny_train_output_shape", tuple(outputs.shape))
+    _print_item("max_steps", args.max_steps)
+    print("Tiny-train completed. No checkpoint was written and no data was downloaded.")
+
+    if args.write_run_summary:
+        run_root = args.run_root.expanduser().resolve()
+        safe_run_root = DEFAULT_RUN_ROOT.resolve()
+        try:
+            run_root.relative_to(safe_run_root)
+        except ValueError as exc:
+            raise ValueError(f"--run-root must be inside {safe_run_root}; got {run_root}") from exc
+
+        run_root.mkdir(parents=True, exist_ok=True)
+        summary_path = run_root / f"tiny_train_summary_{time.strftime('%Y%m%d-%H%M%S')}.json"
+        summary = {
+            "mode": "tiny-train",
+            "batch_size": args.batch_size,
+            "max_steps": args.max_steps,
+            "snr_db": args.snr_db,
+            "losses": losses,
+            "cifar10_batch_source": str(source),
+            "checkpoint_saved": False,
+            "data_downloaded": False,
+        }
+        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        _print_item("run_summary_path", summary_path)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -351,8 +429,13 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--fake-forward", action="store_true", help="Run one tiny random-data forward pass without training.")
     mode.add_argument("--cifar10-check", action="store_true", help="Only inspect local CIFAR-10 files without imports or downloads.")
     mode.add_argument("--real-batch-forward", action="store_true", help="Run one tiny local CIFAR-10 batch forward pass without training.")
+    mode.add_argument("--tiny-train", action="store_true", help="Run a tightly limited tiny training check.")
     parser.add_argument("--cifar10-dir", type=Path, default=DEFAULT_CIFAR10_DIR)
     parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--max-steps", type=int, default=1)
+    parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
+    parser.add_argument("--write-run-summary", action="store_true")
+    parser.add_argument("--save-checkpoint", action="store_true")
     parser.add_argument("--snr-db", type=float, default=10.0)
     parser.add_argument("--transmit-channel-num", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
@@ -362,7 +445,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    if not (args.check_only or args.build_only or args.fake_forward or args.cifar10_check or args.real_batch_forward):
+    if not (args.check_only or args.build_only or args.fake_forward or args.cifar10_check or args.real_batch_forward or args.tiny_train):
         args.check_only = True
 
     print("ADJSCC CIFAR-10 smoke wrapper")
@@ -386,6 +469,9 @@ def main() -> int:
     elif args.real_batch_forward:
         print()
         run_real_batch_forward(modules, args)
+    elif args.tiny_train:
+        print()
+        run_tiny_train(modules, args)
     else:
         print("\nCheck-only completed.")
     return 0
