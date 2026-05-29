@@ -285,6 +285,99 @@ Next step:
 - Do not directly start formal training.
 - Before the next run, define whether run summaries are allowed, where outputs go, what evidence to collect, and whether checkpoint writing remains disabled.
 
+## 2026-05-29
+
+### 1-step tiny training + run summary 写入测试
+
+Status: 1-step tiny training 已经运行，并且启用了 `--write-run-summary`。本阶段确认小型 JSON 摘要可以安全写入外部实验输出目录。它仍然只是 tiny training smoke，不是正式训练，不是论文完整复现，也没有产生论文评价指标。
+
+Evidence source: 用户提供的实验执行记录和已读取到的 run summary JSON 内容。
+
+本阶段目标：
+
+- 运行一次非常小的训练测试：`max_steps=1`，`batch_size=2`。
+- 启用 `--write-run-summary`，确认程序能把本次运行的小摘要写到外部实验目录。
+- 继续保持安全边界：不保存 checkpoint，不下载新数据，不修改 `external/ADJSCC`，不把运行产物混进 Git 仓库。
+
+Run summary 结果：
+
+- 外部运行目录：`/mnt/d/Research/ai-data/runs/ADJSCC`。
+- 实际生成 JSON：`/mnt/d/Research/ai-data/runs/ADJSCC/tiny_train_summary_20260529-210910.json`。
+- Windows 路径：`D:\Research\ai-data\runs\ADJSCC\tiny_train_summary_20260529-210910.json`。
+- 文件大小：`239 bytes`。
+- JSON 文件本身是实验运行产物，不提交 Git。
+
+JSON 主要字段：
+
+```json
+{
+  "mode": "tiny-train",
+  "batch_size": 2,
+  "max_steps": 1,
+  "snr_db": 10.0,
+  "losses": [
+    3472.2255859375
+  ],
+  "cifar10_batch_source": "cifar-10-batches-py/data_batch_1",
+  "checkpoint_saved": false,
+  "data_downloaded": false
+}
+```
+
+Training smoke result:
+
+- Training mode: `tiny-train`。
+- Max steps: `1`。
+- Batch size: `2`。
+- SNR: `10.0 dB`。
+- Recorded loss: `3472.2255859375`。
+- JSON losses: `[3472.2255859375]`。
+
+Beginner notes:
+
+- run summary 可以理解成“一次实验的小摘要单”。它记录这次怎么跑、batch size 是多少、训练了几步、loss 是多少、有没有保存 checkpoint、有没有下载数据等。
+- run summary 放在 `D:\Research\ai-data`，不是放进 Git，是因为它属于实验运行产物。以后这种 JSON 可能会越来越多；Git 仓库主要用来保存代码、笔记和小型总结，避免把运行产物塞进版本历史。
+- 这次仍然只是 tiny training smoke，因为只跑了 `1 step`。它的意义是确认训练链路和摘要写入链路能跑通，不是训练出可用模型。
+- `loss=3472.2255859375` 只能说明训练过程算出了一个误差数字，不能当作论文复现指标。本阶段没有 PSNR、SSIM、MS-SSIM。
+
+Safety boundary confirmed:
+
+- Training was run, but only for 1 step tiny training。
+- No long training was run。
+- No checkpoint was saved。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- No PSNR was produced。
+- No SSIM was produced。
+- No MS-SSIM was produced。
+- Run summary JSON itself was not added to Git。
+- `git status --short` was clean in the provided record。
+
+命令拼写注意事项：
+
+- 用户实际命令里写成了 `PYTHONDONTWRITECODE=1`，少了 `BYTE`。
+- 这个拼写错误只影响是否禁用 `.pyc` 缓存文件写入，不影响 Python 执行训练、loss 计算和 JSON 写入。
+- 用户实际命令里写成了 `--max-step 1`，`argparse` 将它解析为 `--max-steps`，所以本次仍然按 1 step 执行。
+- 后续统一使用正确写法：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1
+--max-steps 1
+```
+
+Current conclusion:
+
+- 1-step tiny training + run summary 写入测试已经通过。
+- 可以记录为“训练 smoke + JSON 摘要写入链路已跑通”。
+- 不能记录为正式训练完成。
+- 不能记录为论文完整复现完成。
+- 不能用这个 loss 代替 PSNR、SSIM、MS-SSIM 等论文指标。
+
+Next step:
+
+- 可以让 Git 管理 Agent 接手，把 `notes/reproduction_log.md` 和 `results/status_2026-05-29_run_summary_check.md` 纳入版本管理。
+- 下一阶段如果继续实验，建议先规划 5-step tiny training 或更完整的 run summary 字段检查；在明确授权前不要运行长训练、不要保存 checkpoint、不要下载新数据。
+
 ## Experiment Template
 
 ```text
