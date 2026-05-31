@@ -481,6 +481,88 @@ Next step:
 - 可以让 Git 管理 Agent 接手本次 Markdown 记录。
 - 下一步可以考虑 5-step tiny training，但仍需用户单独确认；在确认前不要运行更长训练、不要保存 checkpoint、不要下载新数据。
 
+### 5-step tiny training + enhanced run summary
+
+Status: 5-step tiny training smoke 已完成，并生成 enhanced run summary。本阶段比 1-step 多跑了 4 个 step，用来观察训练链路能否连续跑几步、loss 列表能否被完整写入 JSON。它仍然不是正式训练，不是论文完整复现，也没有产生论文评价指标。
+
+Evidence source: 用户提供的实验执行记录和 enhanced run summary 信息。
+
+Command run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 /home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/bin/python -m src.repro.cifar10_smoke --tiny-train --max-steps 5 --batch-size 2 --write-run-summary
+```
+
+Run summary 结果：
+
+- WSL 路径：`/mnt/d/Research/ai-data/runs/ADJSCC/tiny_train_summary_20260531-212309.json`。
+- Windows 路径：`D:\Research\ai-data\runs\ADJSCC\tiny_train_summary_20260531-212309.json`。
+- 文件大小：`993 bytes`。
+- JSON 文件位于 `D:\Research\ai-data\runs\ADJSCC`，属于实验运行产物，不加入 Git。
+
+训练设置：
+
+- Mode: `tiny-train`。
+- Max steps: `5`。
+- Batch size: `2`。
+- Input shape: `[2, 32, 32, 3]`。
+- Output shape: `[2, 32, 32, 3]`。
+
+Loss 列表：
+
+```json
+[
+  3472.5771484375,
+  3467.310302734375,
+  3459.9541015625,
+  3450.0517578125,
+  3437.323486328125
+]
+```
+
+- Loss 数量：`5`。
+- 这 5 个 loss 对应 5 个 tiny training step。
+- loss 从 `3472.5771484375` 到 `3437.323486328125`，说明这个极小训练过程中误差数字有下降趋势。
+- 但 loss 下降不能直接当作论文复现成功。它只是 smoke 阶段训练链路证据，不能代替 PSNR、SSIM、MS-SSIM 等论文指标。
+
+Beginner notes:
+
+- 5-step tiny training 可以理解成让模型连续做 5 次很小的训练更新，比 1-step 更能检查训练循环是否稳定，但规模仍然非常小。
+- 5 step 仍然不是正式训练，因为正式训练通常需要大量 step 或 epoch，还需要保存与评估模型，并和论文指标做对比。
+- loss 列表就是每一步训练后记录下来的误差数字。列表里有 5 个数，表示这次 5-step tiny training 每一步都有记录。
+- loss 下降看起来是好信号，说明这几步里训练代码在尝试减小误差；但它不等于模型达到了论文效果，因为本阶段没有跑正式评估，也没有 PSNR、SSIM、MS-SSIM。
+- run summary JSON 不加入 Git，是因为它是实验运行产物，以后可能越来越多。Git 仓库主要保存代码、笔记和小型总结。
+- 仍然不保存 checkpoint，是因为 tiny training 的目标是验证训练链路和记录链路，不是产出可复用模型。保存 checkpoint 会引入额外产物和管理负担，应该留到更正式的训练规划阶段再单独确认。
+
+Safety boundary confirmed:
+
+- Training was run, but only for 5-step tiny training。
+- No formal training was run。
+- No checkpoint was saved。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- No PSNR was produced。
+- No SSIM was produced。
+- No MS-SSIM was produced。
+- `checkpoint_saved`: `false`。
+- `data_downloaded`: `false`。
+- `official_train_eval_used`: `false`。
+- External JSON itself was not added to Git。
+- `git status --short` was clean in the provided record。
+
+Current conclusion:
+
+- 5-step tiny training smoke + enhanced run summary 已通过。
+- 可以记录为：训练循环能连续跑 5 个 tiny step，并把 5 个 loss、安全字段和 shape 信息写入外部 JSON。
+- 不能记录为正式训练完成。
+- 不能记录为论文完整复现完成。
+- 不能把 loss 下降写成论文复现成功。
+
+Next step:
+
+- 可以让 Git 管理 Agent 接手本次 Markdown 记录。
+- 下一步如果继续推进，应先单独确认是否允许更长 tiny training、是否仍然禁止 checkpoint、是否需要开始规划 PSNR/SSIM/MS-SSIM 评估。
+
 ## Experiment Template
 
 ```text
