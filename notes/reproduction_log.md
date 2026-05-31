@@ -378,6 +378,109 @@ Next step:
 - 可以让 Git 管理 Agent 接手，把 `notes/reproduction_log.md` 和 `results/status_2026-05-29_run_summary_check.md` 纳入版本管理。
 - 下一阶段如果继续实验，建议先规划 5-step tiny training 或更完整的 run summary 字段检查；在明确授权前不要运行长训练、不要保存 checkpoint、不要下载新数据。
 
+## 2026-05-31
+
+### Enhanced run summary 验证
+
+Status: enhanced run summary 验证已完成。实验执行 Agent 已运行一次 1-step tiny training，并启用 `--write-run-summary`，生成了更详细的 JSON 摘要。本阶段仍然只是 tiny training smoke，不是正式训练，不是论文完整复现，也没有产生论文评价指标。
+
+Evidence source: 用户提供的实验执行记录、enhanced JSON 字段摘要，以及代码复现 Agent 审查结论。
+
+本阶段目标：
+
+- 验证 enhanced run summary 能否记录比 2026-05-29 更完整的信息。
+- 继续只运行 `1 step` tiny training：`max_steps=1`，`batch_size=2`，`snr_db=10.0`。
+- 检查 JSON 是否记录环境版本、输入输出 shape、安全标记和输出路径。
+- 继续保持边界：不保存 checkpoint，不下载新数据，不修改 `external/ADJSCC`，不把 JSON 运行产物加入 Git。
+
+Enhanced JSON 结果：
+
+- WSL 路径：`/mnt/d/Research/ai-data/runs/ADJSCC/tiny_train_summary_20260531-203648.json`。
+- Windows 路径：`D:\Research\ai-data\runs\ADJSCC\tiny_train_summary_20260531-203648.json`。
+- 文件大小：`907 bytes`。
+- JSON 文件位于 `D:\Research\ai-data\runs\ADJSCC`，属于实验运行产物，不加入 Git。
+
+运行设置和 loss：
+
+- Mode: `tiny-train`。
+- Max steps: `1`。
+- Batch size: `2`。
+- SNR: `10.0 dB`。
+- Loss: `3472.816162109375`。
+- 这个 loss 只说明 1-step tiny training 能算出误差，不是论文指标。
+
+Enhanced JSON 主要字段：
+
+- `timestamp`: `2026-05-31 20:36:48`。
+- `mode`: `tiny-train`。
+- `python_executable`。
+- `python_version`: `3.10.20`。
+- `tensorflow_version`: `2.14.0`。
+- `tensorflow_probability_version`: `0.22.0`。
+- `numpy_version`: `1.26.4`。
+- `input_shape`: `[2, 32, 32, 3]`。
+- `snr_shape`: `[2, 1]`。
+- `output_shape`: `[2, 32, 32, 3]`。
+- `run_root`。
+- `summary_path`。
+- `batch_size`: `2`。
+- `max_steps`: `1`。
+- `snr_db`: `10.0`。
+- `losses`: `[3472.816162109375]`。
+- `cifar10_batch_source`: `cifar-10-batches-py/data_batch_1`。
+- `checkpoint_saved`: `false`。
+- `data_downloaded`: `false`。
+- `official_train_eval_used`: `false`。
+
+Beginner notes:
+
+- enhanced run summary 可以理解成“更详细的一次实验小摘要单”。普通摘要只记几个关键结果；enhanced 版本还会把运行环境、输入输出形状、输出路径和安全标记也记下来，方便以后追踪。
+- 记录 Python、TensorFlow、TensorFlow Probability 和 NumPy 版本，是为了以后知道这次实验到底在哪套软件环境里跑出来。深度学习实验很容易受到版本影响，版本不同，报错、数值或行为都可能不一样。
+- 记录 `input_shape / output_shape` 是为了确认图片 batch 进模型和出模型时形状正确。这里输入是 `[2, 32, 32, 3]`，输出也是 `[2, 32, 32, 3]`，说明 2 张 32x32 RGB 图片经过模型后仍然是图片形状，没有在数据流中变形或断掉。
+- `snr_shape=[2, 1]` 表示每张图片都有一个 SNR 条件值，这和 batch size 2 对得上。
+- `official_train_eval_used=false` 很重要，因为它说明这次没有调用官方完整训练或评估入口，只是在本项目安全 wrapper 里做 tiny smoke。这样可以避免误以为已经跑了正式训练或论文评估流程。
+- JSON 不进 Git，是因为它是实验运行产物，以后可能越来越多。Git 仓库主要保存代码、笔记和小型总结；运行产物统一放在 `D:\Research\ai-data` 更清楚。
+- 这仍然不是论文复现结果，因为只有 `1 step`，没有正式训练，没有 checkpoint，没有 PSNR、SSIM、MS-SSIM，也没有和论文表格结果做对比。
+
+Code review notes:
+
+- 代码复现 Agent 已审查 enhanced summary 字段合理。
+- `run_root / summary_path` 安全。
+- 输出被限制在 `/mnt/d/Research/ai-data/runs/ADJSCC` 内。
+- 未发现保存 checkpoint 风险。
+- 未发现自动下载数据风险。
+- 未发现官方 train/eval 调用风险。
+- 未发现 `external/ADJSCC` 修改风险。
+- 未发现 Git 污染风险。
+- 当前不建议阻塞性修改。
+- 可选后续建议：以后可以把文件头注释中 “avoids training” 改得更精确，因为现在已经存在显式 `--tiny-train` 模式。
+
+Safety boundary confirmed:
+
+- Training was run, but only for 1-step tiny training。
+- No long training was run。
+- No checkpoint was saved。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- Official train/eval entrypoints were not used。
+- No PSNR was produced。
+- No SSIM was produced。
+- No MS-SSIM was produced。
+- Enhanced JSON itself was not added to Git。
+
+Current conclusion:
+
+- Enhanced run summary 验证通过。
+- 本阶段可以记录为：1-step tiny training 后，增强版 JSON 摘要能正确记录环境版本、shape、路径、loss 和安全标记。
+- 不能记录为正式训练完成。
+- 不能记录为论文完整复现完成。
+- 不能把 `loss=3472.816162109375` 当作论文指标。
+
+Next step:
+
+- 可以让 Git 管理 Agent 接手本次 Markdown 记录。
+- 下一步可以考虑 5-step tiny training，但仍需用户单独确认；在确认前不要运行更长训练、不要保存 checkpoint、不要下载新数据。
+
 ## Experiment Template
 
 ```text

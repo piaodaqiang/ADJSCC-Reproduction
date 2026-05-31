@@ -407,7 +407,18 @@ def run_tiny_train(modules: RuntimeModules, args: argparse.Namespace) -> None:
         run_root.mkdir(parents=True, exist_ok=True)
         summary_path = run_root / f"tiny_train_summary_{time.strftime('%Y%m%d-%H%M%S')}.json"
         summary = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "mode": "tiny-train",
+            "python_executable": sys.executable,
+            "python_version": sys.version,
+            "tensorflow_version": getattr(tf, "__version__", "<unknown>"),
+            "tensorflow_probability_version": getattr(modules.tfp, "__version__", "<unknown>"),
+            "numpy_version": getattr(modules.np, "__version__", "<unknown>"),
+            "input_shape": list(inputs.shape),
+            "snr_shape": list(snr.shape),
+            "output_shape": list(outputs.shape),
+            "run_root": str(run_root),
+            "summary_path": str(summary_path),
             "batch_size": args.batch_size,
             "max_steps": args.max_steps,
             "snr_db": args.snr_db,
@@ -415,6 +426,7 @@ def run_tiny_train(modules: RuntimeModules, args: argparse.Namespace) -> None:
             "cifar10_batch_source": str(source),
             "checkpoint_saved": False,
             "data_downloaded": False,
+            "official_train_eval_used": False,
         }
         summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         _print_item("run_summary_path", summary_path)
