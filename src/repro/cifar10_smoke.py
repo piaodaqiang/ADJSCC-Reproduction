@@ -1,8 +1,8 @@
 """Safe CIFAR-10 smoke wrapper for the ADJSCC reproduction project.
 
-This module intentionally avoids dataset downloads, training, checkpoint
-writes, and direct execution of the upstream adjscc_cifar10.py train/eval
-entrypoints.
+This module intentionally avoids dataset downloads, long training, checkpoint
+writes, image writes, and direct execution of the upstream adjscc_cifar10.py
+train/eval entrypoints.
 """
 
 from __future__ import annotations
@@ -344,6 +344,66 @@ def run_real_batch_forward(modules: RuntimeModules, args: argparse.Namespace) ->
     _print_item("real_output_dtype", outputs.dtype.name)
     print("Real-batch-forward completed. No training was run, no checkpoint was written, and no data was downloaded.")
 
+
+def _compute_mse_psnr_per_image(tf: object, targets, outputs, max_pixel_value: float):
+    squared_error = tf.math.squared_difference(targets, outputs)
+    per_image_mse = tf.reduce_mean(squared_error, axis=(1, 2, 3))
+    max_value = tf.constant(max_pixel_value, dtype=per_image_mse.dtype)
+    finite_psnr = 10.0 * tf.math.log((max_value * max_value) / per_image_mse) / tf.math.log(10.0)
+    per_image_psnr = tf.where(per_image_mse > 0.0, finite_psnr, tf.fill(tf.shape(per_image_mse), float("inf")))
+    return per_image_mse, per_image_psnr
+
+
+def run_metrics_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None:
+    print("== Metrics-smoke ==")
+    if args.batch_size != 2:
+        raise ValueError("Metrics-smoke is intentionally limited to --batch-size 2 in this stage.")
+    if args.write_run_summary:
+        raise RuntimeError("Metrics-smoke only prints values in this stage; it does not write run summaries.")
+    if args.save_checkpoint:
+        raise RuntimeError("Metrics-smoke does not support checkpoint saving.")
+
+    images, source = load_cifar10_batch_images(args.cifar10_dir, args.batch_size, modules.np)
+
+    tf = modules.tf
+    model = build_model(modules, args.transmit_channel_num, args.learning_rate)
+    tf.random.set_seed(args.seed)
+
+    inputs = tf.convert_to_tensor(images, dtype=tf.float32)
+    targets = tf.convert_to_tensor(images, dtype=tf.float32)
+    snr = tf.ones((args.batch_size, 1), dtype=tf.float32) * float(args.snr_db)
+    outputs = model([inputs, snr], training=False)
+
+    max_pixel_value = 255.0
+    per_image_mse, per_image_psnr = _compute_mse_psnr_per_image(
+        tf,
+        targets,
+        outputs,
+        max_pixel_value=max_pixel_value,
+    )
+    batch_mse = tf.reduce_mean(per_image_mse)
+    batch_psnr = tf.reduce_mean(per_image_psnr)
+
+    mse_values = [float(value) for value in per_image_mse.numpy()]
+    psnr_values = [float(value) for value in per_image_psnr.numpy()]
+
+    _print_item("cifar10_batch_source", source)
+    _print_item("metrics_input_shape", tuple(inputs.shape))
+    _print_item("snr_shape", tuple(snr.shape))
+    _print_item("metrics_output_shape", tuple(outputs.shape))
+    _print_item("pixel_value_range_assumption", "[0, 255]")
+    _print_item("psnr_max_pixel_value", max_pixel_value)
+    for index, (mse, psnr) in enumerate(zip(mse_values, psnr_values), start=1):
+        _print_item(f"image_{index}_mse", mse)
+        _print_item(f"image_{index}_psnr_db", psnr)
+    _print_item("batch_mean_mse", float(batch_mse.numpy()))
+    _print_item("batch_mean_psnr_db", float(batch_psnr.numpy()))
+    print(
+        "Metrics-smoke completed. Printed MSE/PSNR only; no training, checkpoint, image, "
+        "summary, or data download was produced."
+    )
+
+
 def run_tiny_train(modules: RuntimeModules, args: argparse.Namespace) -> None:
     print("== Tiny-train ==")
 
@@ -433,7 +493,7 @@ def run_tiny_train(modules: RuntimeModules, args: argparse.Namespace) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Safe ADJSCC CIFAR-10 smoke wrapper: checks imports, builds the model, or runs one fake forward pass."
+        description="Safe ADJSCC CIFAR-10 smoke wrapper: checks imports, builds the model, runs tiny forwards, or prints minimal metrics."
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check-only", action="store_true", help="Only check runtime, imports, paths, and CIFAR-10 presence.")
@@ -441,6 +501,7 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--fake-forward", action="store_true", help="Run one tiny random-data forward pass without training.")
     mode.add_argument("--cifar10-check", action="store_true", help="Only inspect local CIFAR-10 files without imports or downloads.")
     mode.add_argument("--real-batch-forward", action="store_true", help="Run one tiny local CIFAR-10 batch forward pass without training.")
+    mode.add_argument("--metrics-smoke", action="store_true", help="Print MSE/PSNR for two local CIFAR-10 images without saving artifacts.")
     mode.add_argument("--tiny-train", action="store_true", help="Run a tightly limited tiny training check.")
     parser.add_argument("--cifar10-dir", type=Path, default=DEFAULT_CIFAR10_DIR)
     parser.add_argument("--batch-size", type=int, default=2)
@@ -457,11 +518,19 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    if not (args.check_only or args.build_only or args.fake_forward or args.cifar10_check or args.real_batch_forward or args.tiny_train):
+    if not (
+        args.check_only
+        or args.build_only
+        or args.fake_forward
+        or args.cifar10_check
+        or args.real_batch_forward
+        or args.metrics_smoke
+        or args.tiny_train
+    ):
         args.check_only = True
 
     print("ADJSCC CIFAR-10 smoke wrapper")
-    print("Safety: no dataset download, no train/eval, no checkpoint write.")
+    print("Safety: no dataset download, no train/eval, no checkpoint write, no image write.")
     _ensure_project_context()
 
     if args.cifar10_check:
@@ -481,6 +550,9 @@ def main() -> int:
     elif args.real_batch_forward:
         print()
         run_real_batch_forward(modules, args)
+    elif args.metrics_smoke:
+        print()
+        run_metrics_smoke(modules, args)
     elif args.tiny_train:
         print()
         run_tiny_train(modules, args)

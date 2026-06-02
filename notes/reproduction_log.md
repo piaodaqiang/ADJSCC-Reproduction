@@ -563,6 +563,93 @@ Next step:
 - 可以让 Git 管理 Agent 接手本次 Markdown 记录。
 - 下一步如果继续推进，应先单独确认是否允许更长 tiny training、是否仍然禁止 checkpoint、是否需要开始规划 PSNR/SSIM/MS-SSIM 评估。
 
+## 2026-06-02
+
+### Metrics-smoke MSE/PSNR 指标链路验证
+
+Status: `--metrics-smoke` 已通过。本阶段读取本地 CIFAR-10 的 2 张图片，让它们经过 ADJSCC 模型做一次非训练 forward，然后计算 MSE 和 PSNR。它只验证 MSE/PSNR 指标计算流程能跑通，不是正式论文 evaluation，也不是论文复现完成。
+
+Evidence source: 用户提供的 metrics-smoke 运行结果和代码复现 Agent 审查结论。
+
+Command run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 /home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/bin/python -m src.repro.cifar10_smoke --metrics-smoke
+```
+
+Metrics-smoke result:
+
+- Metrics-smoke passed: yes.
+- Input shape: `(2, 32, 32, 3)`。
+- Output shape: `(2, 32, 32, 3)`。
+
+Per-image MSE:
+
+- `image_1_mse`: `3279.354736328125`。
+- `image_2_mse`: `3667.052490234375`。
+
+Per-image PSNR:
+
+- `image_1_psnr_db`: `12.972919464111328`。
+- `image_2_psnr_db`: `12.487631797790527`。
+
+Batch mean:
+
+- `batch_mean_mse`: `3473.20361328125`。
+- `batch_mean_psnr_db`: `12.730276107788086`。
+
+Beginner notes:
+
+- MSE 可以理解成“原图和重建图之间的平均平方误差”。每个像素都比较一次，差得越多，平方误差越大。通常 MSE 越小越好。
+- PSNR 是由 MSE 换算出来的图像质量分数，单位是 dB。通常 PSNR 越大，表示重建图和原图越接近。
+- 这里用 `255` 是因为当前图像像素按 `[0,255]` 范围计算。PSNR 公式里需要知道像素最大值，所以使用 `255`。
+- 这次只用了 2 张 CIFAR-10 图片，样本太少，不能代表论文结果。
+- Metrics-smoke 的意义是确认“指标计算流程能跑通”：模型能输出图像，程序能按每张图计算 MSE，再把 MSE 换算成 PSNR。
+- 当前还没有 SSIM、MS-SSIM，也没有完整测试集评估，所以不能写成正式 evaluation。
+
+Metric calculation notes:
+
+- MSE 按每张图片的 `(H, W, C)` 求均值。
+- PSNR 使用 `10 * log10(255^2 / MSE)`。
+- `batch_mean_psnr_db` 是两张图片 PSNR 的平均值，不是由 `batch_mean_mse` 再换算得到。
+
+Code review notes:
+
+- `--metrics-smoke` 只有显式传入才会运行。
+- 默认模式仍是 `check-only`。
+- `run_metrics_smoke` 使用 `training=False`。
+- 没有 `GradientTape()`，没有 `model.fit()`。
+- 没有保存图片、checkpoint、`.h5`、`.ckpt`。
+- 没有调用 `tf.keras.datasets.cifar10.load_data()`。
+- 没有调用官方 `adjscc_cifar10.py train/eval`。
+- 未发现自动下载数据、保存产物或官方训练/评估入口风险。
+
+Safety boundary confirmed:
+
+- Training was not run。
+- No images were saved。
+- No checkpoint was saved。
+- No run summary was written。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- No formal paper metrics were produced。
+- No SSIM was produced。
+- No MS-SSIM was produced。
+- No full test-set evaluation was run。
+
+Current conclusion:
+
+- Metrics-smoke MSE/PSNR 指标链路验证通过。
+- 可以记录为：2 张 CIFAR-10 图片的非训练 forward、MSE 计算和 PSNR 计算流程能跑通。
+- 不能记录为正式论文 evaluation。
+- 不能记录为论文完整复现完成。
+- 不能用这 2 张图片的 MSE/PSNR 代表论文结果。
+
+Next step:
+
+- 可以让 Git 管理 Agent 接手本次 Markdown 记录。
+- 下一步可以考虑规划 SSIM/MS-SSIM smoke 或更完整的测试集评估，但必须先单独确认评估范围、是否保存结果、是否允许写 run summary 或其他输出。
+
 ## Experiment Template
 
 ```text

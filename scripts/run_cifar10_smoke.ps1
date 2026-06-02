@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("check-only", "build-only", "fake-forward", "cifar10-check", "real-batch-forward", "tiny-train")]
+  [ValidateSet("check-only", "build-only", "fake-forward", "cifar10-check", "real-batch-forward", "metrics-smoke", "tiny-train")]
   [string]$Mode = "check-only",
   [string]$Distro = "Ubuntu-ADJSCC",
   [string]$WslProjectPath = "/mnt/d/Cloud/OneDrive/文档/Research/SemanticCommunication/ADJSCC-Reproduction",
