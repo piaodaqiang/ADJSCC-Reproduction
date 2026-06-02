@@ -345,13 +345,15 @@ def run_real_batch_forward(modules: RuntimeModules, args: argparse.Namespace) ->
     print("Real-batch-forward completed. No training was run, no checkpoint was written, and no data was downloaded.")
 
 
-def _compute_mse_psnr_per_image(tf: object, targets, outputs, max_pixel_value: float):
-    squared_error = tf.math.squared_difference(targets, outputs)
+def _compute_image_metrics_per_image(tf: object, targets, outputs, max_pixel_value: float):
+    clipped_outputs = tf.clip_by_value(outputs, 0.0, max_pixel_value)
+    squared_error = tf.math.squared_difference(targets, clipped_outputs)
     per_image_mse = tf.reduce_mean(squared_error, axis=(1, 2, 3))
     max_value = tf.constant(max_pixel_value, dtype=per_image_mse.dtype)
     finite_psnr = 10.0 * tf.math.log((max_value * max_value) / per_image_mse) / tf.math.log(10.0)
     per_image_psnr = tf.where(per_image_mse > 0.0, finite_psnr, tf.fill(tf.shape(per_image_mse), float("inf")))
-    return per_image_mse, per_image_psnr
+    per_image_ssim = tf.image.ssim(targets, clipped_outputs, max_val=max_pixel_value)
+    return per_image_mse, per_image_psnr, per_image_ssim
 
 
 def run_metrics_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None:
@@ -375,7 +377,7 @@ def run_metrics_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None
     outputs = model([inputs, snr], training=False)
 
     max_pixel_value = 255.0
-    per_image_mse, per_image_psnr = _compute_mse_psnr_per_image(
+    per_image_mse, per_image_psnr, per_image_ssim = _compute_image_metrics_per_image(
         tf,
         targets,
         outputs,
@@ -383,9 +385,11 @@ def run_metrics_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None
     )
     batch_mse = tf.reduce_mean(per_image_mse)
     batch_psnr = tf.reduce_mean(per_image_psnr)
+    batch_ssim = tf.reduce_mean(per_image_ssim)
 
     mse_values = [float(value) for value in per_image_mse.numpy()]
     psnr_values = [float(value) for value in per_image_psnr.numpy()]
+    ssim_values = [float(value) for value in per_image_ssim.numpy()]
 
     _print_item("cifar10_batch_source", source)
     _print_item("metrics_input_shape", tuple(inputs.shape))
@@ -393,13 +397,15 @@ def run_metrics_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None
     _print_item("metrics_output_shape", tuple(outputs.shape))
     _print_item("pixel_value_range_assumption", "[0, 255]")
     _print_item("psnr_max_pixel_value", max_pixel_value)
-    for index, (mse, psnr) in enumerate(zip(mse_values, psnr_values), start=1):
+    for index, (mse, psnr, ssim) in enumerate(zip(mse_values, psnr_values, ssim_values), start=1):
         _print_item(f"image_{index}_mse", mse)
         _print_item(f"image_{index}_psnr_db", psnr)
+        _print_item(f"image_{index}_ssim", ssim)
     _print_item("batch_mean_mse", float(batch_mse.numpy()))
     _print_item("batch_mean_psnr_db", float(batch_psnr.numpy()))
+    _print_item("batch_mean_ssim", float(batch_ssim.numpy()))
     print(
-        "Metrics-smoke completed. Printed MSE/PSNR only; no training, checkpoint, image, "
+        "Metrics-smoke completed. Printed MSE/PSNR/SSIM only; no training, checkpoint, image, "
         "summary, or data download was produced."
     )
 

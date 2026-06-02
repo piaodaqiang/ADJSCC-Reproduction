@@ -650,6 +650,73 @@ Next step:
 - 可以让 Git 管理 Agent 接手本次 Markdown 记录。
 - 下一步可以考虑规划 SSIM/MS-SSIM smoke 或更完整的测试集评估，但必须先单独确认评估范围、是否保存结果、是否允许写 run summary 或其他输出。
 
+### SSIM smoke 指标链路验证
+
+Status: SSIM smoke 已完成。本阶段是在已有 `--metrics-smoke` 中加入 SSIM 计算，用同样的 2 张 CIFAR-10 图片验证 SSIM 指标计算链路。它仍然只是 smoke test，也就是“小规模安全冒烟测试”，不是正式论文 evaluation，也不是论文复现完成。
+
+Evidence source: 用户提供的 SSIM smoke 结果和代码复现 Agent 审查结论。
+
+SSIM results:
+
+- `image_1_ssim`: `0.0835731998`。
+- `image_2_ssim`: `0.0400035866`。
+- `batch_mean_ssim`: `0.0617883950`。
+
+SSIM calculation notes:
+
+- 使用 TensorFlow API：`tf.image.ssim(targets, clipped_outputs, max_val=255.0)`。
+- `outputs` 先 clip 到 `[0,255]`。
+- 这样做是因为图像指标通常要求像素值在合法图像范围内。
+- 正式 evaluation 时需要明确记录是否 clip，因为这是重要评估口径。
+
+Beginner notes:
+
+- SSIM 是结构相似度指标。通常越接近 `1`，说明两张图的结构越相似。
+- PSNR 更偏“逐像素误差”，也就是一个像素一个像素地比差多少；SSIM 更偏“结构和纹理像不像”，更接近人眼看图时关心的局部结构。
+- 这次只用了 2 张 CIFAR-10 图片，所以只能说明 SSIM 计算链路能跑，不能代表论文正式结果。
+- 当前 SSIM 数值不能写成论文指标，因为没有完整测试集 evaluation，也没有正式训练 checkpoint。
+- 当前还没有 MS-SSIM。
+
+Code review notes:
+
+- `--metrics-smoke` 仍然只有显式传入才会运行。
+- 默认模式仍是 `check-only`。
+- `run_metrics_smoke` 使用 `training=False`。
+- 没有 `fit()`。
+- 没有 `GradientTape()`。
+- 没有保存图片。
+- 没有保存 checkpoint。
+- 没有调用 `save_weights` 或 `.save()`。
+- 没有调用 `tf.keras.datasets.cifar10.load_data()`。
+- 没有调用官方 `adjscc_cifar10.py train/eval`。
+- 没有修改 `external/ADJSCC`。
+
+Safety boundary confirmed:
+
+- Training was not run。
+- No images were saved。
+- No checkpoint was saved。
+- No run summary was written。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- No formal paper metrics were produced。
+- No full test-set evaluation was run。
+- No MS-SSIM was produced。
+- No formal training checkpoint exists for this result。
+
+Current conclusion:
+
+- SSIM smoke 指标链路验证通过。
+- 可以记录为：在 metrics-smoke 中，2 张 CIFAR-10 图片的 SSIM 计算流程能跑通。
+- 不能记录为正式论文 evaluation。
+- 不能记录为论文完整复现完成。
+- 不能用这 2 张图片的 SSIM 数值代表论文结果。
+
+Next step:
+
+- 可以让 Git 管理 Agent 接手本次 Markdown 记录。
+- 下一步可以考虑 MS-SSIM smoke 或更完整的测试集 evaluation，但必须先单独确认评估范围、checkpoint 策略、是否保存结果，以及是否记录 clip 等评估口径。
+
 ## Experiment Template
 
 ```text
