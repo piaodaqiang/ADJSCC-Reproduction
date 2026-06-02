@@ -717,6 +717,74 @@ Next step:
 - 可以让 Git 管理 Agent 接手本次 Markdown 记录。
 - 下一步可以考虑 MS-SSIM smoke 或更完整的测试集 evaluation，但必须先单独确认评估范围、checkpoint 策略、是否保存结果，以及是否记录 clip 等评估口径。
 
+### CIFAR-10 evaluation protocol 口径草案整理
+
+Status: 已新增 CIFAR-10 最小复现实验 evaluation protocol 口径草案。该文档用于说明后续正式 evaluation 时“怎么算指标、怎么记录条件、哪些数字可以比较”，不是正式实验结果，也不是论文复现完成证明。
+
+Evidence source: 论文理解 Agent 结论、已完成的 MSE/PSNR metrics-smoke、已完成的 SSIM metrics-smoke，以及当前 `src/repro/cifar10_smoke.py` wrapper 的只读审查。
+
+新增文档：
+
+- `results/evaluation_protocol_cifar10_minimal.md`
+
+本阶段整理目标：
+
+- 用小白能懂的话解释 evaluation protocol 和“口径”的含义。
+- 明确当前仍处于 CIFAR-10 最小 smoke / tiny training 阶段。
+- 区分当前 2 张图 smoke 与正式 CIFAR-10 test split evaluation。
+- 记录当前 PSNR、SSIM、pixel range、clip policy、SNR、checkpoint 和信道随机性口径。
+- 说明 MS-SSIM 暂缓原因。
+- 给出后续正式 evaluation 的结果记录字段建议。
+
+Protocol 主要结论：
+
+- CIFAR-10 正式 evaluation 应使用 `test` split。
+- 当前本地数据位置为 Windows `D:\Research\ai-data\datasets\CIFAR10`，WSL `/mnt/d/Research/ai-data/datasets/CIFAR10`。
+- 当前 smoke 只使用 2 张图，只能证明指标链路能跑，不能代表正式结果。
+- 当前 wrapper 使用 `[0,255]` 像素范围，并在计算指标前将 outputs clip 到 `[0,255]`。
+- 当前 MSE 按每张图的 `(H, W, C)` 求均值。
+- 当前 per-image PSNR 使用 `10 * log10(255^2 / MSE)`。
+- 当前 `batch_mean_psnr_db` 是 per-image PSNR 的平均值，不是由 batch mean MSE 再换算得到。
+- 当前 SSIM 使用 `tf.image.ssim(targets, clipped_outputs, max_val=255.0)`，并按 per-image SSIM 再求 batch mean。
+- 当前 smoke 使用 SNR `10 dB`；正式 evaluation 需要明确 SNR 列表，不同 SNR 下的指标不能混在一起比较。
+- 当前没有正式 checkpoint；没有 checkpoint 时不能声称复现论文指标。
+- ADJSCC 涉及信道噪声，正式 evaluation 后续需要考虑固定 random seed 或多次传输平均。
+
+MS-SSIM decision:
+
+- 当前暂缓 MS-SSIM。
+- CIFAR-10 只有 `32x32`，默认 MS-SSIM 多尺度下采样可能不适合直接套用。
+- 论文理解 Agent 未看到 MS-SSIM 是该论文 CIFAR-10 主指标。
+- 后续如果需要加入 MS-SSIM，应单独设计参数和 smoke test。
+
+Safety boundary confirmed:
+
+- No experiment was run.
+- No training was run.
+- No formal evaluation was run.
+- No images were saved.
+- No checkpoint was saved.
+- No run summary was written.
+- No data was downloaded.
+- `src/repro/cifar10_smoke.py` was not modified.
+- `scripts/run_cifar10_smoke.ps1` was not modified.
+- `external/ADJSCC` was not modified.
+- No Git commit was created.
+
+Current conclusion:
+
+- Evaluation protocol 口径草案已整理完成。
+- 当前仍不能记录为正式 CIFAR-10 evaluation 完成。
+- 当前仍不能记录为论文表格或曲线复现完成。
+- 当前可以交给代码复现 Agent 审查该 protocol 是否与当前 wrapper 完全一致。
+
+Next step:
+
+- 让代码复现 Agent 审查 `results/evaluation_protocol_cifar10_minimal.md` 与当前 wrapper 的一致性。
+- 暂缓 MS-SSIM。
+- 暂缓长训练。
+- 暂缓正式 evaluation。
+
 ## Experiment Template
 
 ```text
