@@ -24,7 +24,10 @@ UPSTREAM_ROOT = PROJECT_ROOT / "external" / "ADJSCC"
 DEFAULT_CIFAR10_DIR = Path("/mnt/d/Research/ai-data/datasets/CIFAR10")
 DEFAULT_RUN_ROOT = Path("/mnt/d/Research/ai-data/runs/ADJSCC")
 MAX_TINY_TRAIN_STEPS = 10
+DEFAULT_EVAL_SMOKE_IMAGES = 4  # 默认只从测试集拿4张图片进行评估
+MAX_EVAL_SMOKE_IMAGES = 16  # 设置硬上限，防止误操作变成大规模测试
 CIFAR10_BATCH_DIR = "cifar-10-batches-py"
+CIFAR10_TEST_BATCH = "test_batch"  # 将测试集文件名写成常量，后面读测试集时不用手写字符串
 CIFAR10_ARCHIVE = "cifar-10-python.tar.gz"
 CIFAR10_REQUIRED_FILES = (
     "data_batch_1",
@@ -319,6 +322,51 @@ def load_cifar10_batch_images(cifar10_dir: Path, batch_size: int, np_module: obj
     images = images.reshape(batch_size, 3, 32, 32).transpose(0, 2, 3, 1)
     return images, source
 
+# 从已解压目录读取 test_batch
+def _read_test_batch_from_dir(root: Path):
+    batch_path = root / CIFAR10_BATCH_DIR / CIFAR10_TEST_BATCH  # 使用拼接路径
+    if not batch_path.exists():
+        batch_path = root / CIFAR10_TEST_BATCH  # 使用备用路径
+    with batch_path.open("rb") as batch_file:  # 以只读二进制文件的方式打开文件并命名为 batch_file
+        return _load_pickled_cifar10_batch(batch_file), batch_path
+    
+# 从 .tar.gz 压缩包里只读读取 test_batch
+def _read_test_batch_from_archive(archive_path: Path):
+    with tarfile.open(archive_path, mode="r:gz") as archive:
+        member = archive.getmember(f"{CIFAR10_BATCH_DIR}/{CIFAR10_TEST_BATCH}")
+        extracted = archive.extractfile(member)  # 将压缩包里的 test_batch 作为内存文件方式打开，不会解压到硬盘
+        if extracted is None:
+            raise FileNotFoundError(f"Cannot read {CIFAR10_TEST_BATCH} inside {archive_path}")
+        with extracted:
+            return _load_pickled_cifar10_batch(extracted), Path(member.name)  # 返回用 pickle 读取出来的 CIFAR10 数据，以及文件路径(方便后续科研记录)
+
+# 统一读取 CIFAR10 test_batch 图片 (加载 CIFAR10 测试集图片)
+def load_cifar10_test_images(cifar10_dir: Path, image_count: int, np_module: object):
+    if image_count < 1 or image_count > MAX_EVAL_SMOKE_IMAGES:
+        raise ValueError(f"--eval-image-count must be between 1 and {MAX_EVAL_SMOKE_IMAGES}.")  # ValueError: 参数不合理
+    
+    inventory = inspect_cifar10_dir(cifar10_dir)  #  CIFAR-10 文件清单
+    test_batch_path = cifar10_dir / CIFAR10_BATCH_DIR / CIFAR10_TEST_BATCH  # CIFAR-10 测试集图片路径 (标准)
+    root_level_test_batch_path = cifar10_dir / CIFAR10_TEST_BATCH  # CIFAR-10 测试集图片路径 (根目录) (备用)
+
+    if test_batch_path.exists() or root_level_test_batch_path.exists():
+        batch, source = _read_test_batch_from_dir(cifar10_dir)
+    elif inventory.archive_exists:
+        batch, source = _read_test_batch_from_archive(inventory.archive_path)
+    else:
+        raise FileNotFoundError(
+            "No local CIFAR-10 test batch file was found. This wrapper will not download CIFAR-10 automatically."
+        )
+    raw_data = batch.get("data") if isinstance(batch, dict) else None  # 如果 batch 是字典，就获取里面的 "data" 字段(key)，否则设置为 None (用于后续的条件判断)
+    if raw_data is None:  # 如果没有 "data" 就报错
+        raise KeyError(f"CIFAR-10 test batch from {source} does not contain a 'data' field.")
+    if len(raw_data) < image_count:  # 检查图片数量够不够
+        raise ValueError(f"CIFAR-10 test batch from {source} has fewer than {image_count} images.")
+    
+    images = np_module.asarray(raw_data[:image_count], dtype="float32")  # 将图片数据转化为 numpy 数组，并限制图片数量切片为 image_count（4） 张 ，模型计算时候通常用 float32
+    images = images.reshape(image_count, 3, 32, 32).transpose(0, 2, 3, 1)  # transpose 将图片数据形状转换为 (4, 32, 32, 3) (N(number), H(height), W(width), C(channel))
+    # 原本的图片是压缩成长条的数据，需要重新 reshape 成 (N, H, W, C) 的形状，并且将 C 放在最后，因为后续模型计算需要
+    return images, source  # 返回图片数据， 以及图片来源
 
 def run_real_batch_forward(modules: RuntimeModules, args: argparse.Namespace) -> None:
     print("== Real-batch-forward ==")
@@ -409,6 +457,72 @@ def run_metrics_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None
         "summary, or data download was produced."
     )
 
+# 最小测试集评估冒烟函数
+def run_eval_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None:
+    print("== Eval-smoke ==")
+    if args.write_run_summary:
+        raise RuntimeError("Eval-smoke only prints values in this stage; it does not write run summaries.")
+    if args.save_checkpoint:
+        raise RuntimeError("Eval-smoke does not support checkpoint saving.")
+    images, source = load_cifar10_test_images(args.cifar10_dir, args.eval_image_count, modules.np)
+
+    tf = modules.tf
+    # 构建模型
+    model = build_model(modules, args.transmit_channel_num, args.learning_rate)
+    tf.random.set_seed(args.seed)  # 设置随机种子，让随机初始化尽可能一致
+
+    inputs = tf.convert_to_tensor(images, dtype=tf.float32)  # 将 Numpy 数组转换成 TensorFlow 张量 (tensor)
+    targets = tf.convert_to_tensor(images, dtype=tf.float32)  # 目标图片就是原图，所以跟输入图片一样
+    snr = tf.ones((args.eval_image_count, 1), dtype=tf.float32) * float(args.snr_db)  # 信噪比
+    outputs = model([inputs, snr], training=False)  # 模型前向传播
+
+    # 给模型打分
+    max_pixel_value = 255.0  # 最大像素值
+    # 计算每张图的 MSE、PSNR 和 SSIM
+    per_image_mse, per_image_psnr, per_image_ssim = _compute_image_metrics_per_image(
+        tf,
+        targets,
+        outputs,
+        max_pixel_value=max_pixel_value
+    )
+
+    # 计算所有图的平均 MSE、PSNR 和 SSIM
+    mean_mse = tf.reduce_mean(per_image_mse)
+    mean_psnr = tf.reduce_mean(per_image_psnr)
+    mean_ssim = tf.reduce_mean(per_image_ssim)
+
+    # 将三指标的值转换为 numpy 数组，方便打印
+    mse_values = [float(value) for value in per_image_mse.numpy()]
+    psnr_values = [float(value) for value in per_image_psnr.numpy()]
+    ssim_values = [float(value) for value in per_image_ssim.numpy()]
+
+    _print_item("data_split", "test")  # 数据来源是测试集
+    _print_item("image_count", args.eval_image_count)  # 评估图片数量
+    _print_item("cifar10_batch_source", source)  # 数据来源
+    _print_item("snr_db", args.snr_db)  # 信噪比
+    _print_item("clip_policy", "outputs clipped to [0, 255] before metrics")  # 说明计算指标之前将输出裁剪到 [0,255]
+    # 打印 shape
+    _print_item("eval_input_shape", tuple(inputs.shape))
+    _print_item("snr_shape", tuple(snr.shape))
+    _print_item("eval_output_shape", tuple(outputs.shape))
+    # 打印每张图的指标
+    for index, (mse, psnr, ssim) in enumerate(zip(mse_values, psnr_values, ssim_values), start=1):
+        _print_item(f"image_{index}_mse", mse)
+        _print_item(f"image_{index}_psnr_db", psnr)
+        _print_item(f"image_{index}_ssim", ssim)
+    # 打印平均指标
+    _print_item("mean_mse", float(mean_mse.numpy()))
+    _print_item("mean_psnr_db", float(mean_psnr.numpy()))
+    _print_item("mean_ssim", float(mean_ssim.numpy()))
+    # 打印安全检查
+    _print_item("checkpoint_used", False)
+    _print_item("training_run", False)
+    _print_item("data_downloaded", False)
+    _print_item("official_train_eval_used", False)
+    print(
+        "Eval-smoke completed on 4 CIFAR-10 test images by default. This is not a formal paper evaluation; "
+        "no training, checkpoint, image, summary, or data download was produced."
+    )
 
 def run_tiny_train(modules: RuntimeModules, args: argparse.Namespace) -> None:
     print("== Tiny-train ==")
@@ -507,10 +621,12 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--fake-forward", action="store_true", help="Run one tiny random-data forward pass without training.")
     mode.add_argument("--cifar10-check", action="store_true", help="Only inspect local CIFAR-10 files without imports or downloads.")
     mode.add_argument("--real-batch-forward", action="store_true", help="Run one tiny local CIFAR-10 batch forward pass without training.")
-    mode.add_argument("--metrics-smoke", action="store_true", help="Print MSE/PSNR for two local CIFAR-10 images without saving artifacts.")
+    mode.add_argument("--metrics-smoke", action="store_true", help="Print MSE/PSNR/SSIM for two local CIFAR-10 images without saving artifacts.")
+    mode.add_argument("--eval-smoke", action="store_true", help="Print MSE/PSNR/SSIM for four local CIFAR-10 test images without saving artifacts.")
     mode.add_argument("--tiny-train", action="store_true", help="Run a tightly limited tiny training check.")
     parser.add_argument("--cifar10-dir", type=Path, default=DEFAULT_CIFAR10_DIR)
     parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--eval-image-count", type=int, default=DEFAULT_EVAL_SMOKE_IMAGES)
     parser.add_argument("--max-steps", type=int, default=1)
     parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
     parser.add_argument("--write-run-summary", action="store_true")
@@ -531,6 +647,7 @@ def main() -> int:
         or args.cifar10_check
         or args.real_batch_forward
         or args.metrics_smoke
+        or args.eval_smoke
         or args.tiny_train
     ):
         args.check_only = True
@@ -559,6 +676,9 @@ def main() -> int:
     elif args.metrics_smoke:
         print()
         run_metrics_smoke(modules, args)
+    elif args.eval_smoke:
+        print()
+        run_eval_smoke(modules, args)
     elif args.tiny_train:
         print()
         run_tiny_train(modules, args)

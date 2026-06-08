@@ -785,6 +785,101 @@ Next step:
 - 暂缓长训练。
 - 暂缓正式 evaluation。
 
+## 2026-06-08
+
+### CIFAR-10 test split eval-smoke
+
+Status: `--eval-smoke` 已完成。本阶段从 CIFAR-10 test split 的 `test_batch` 读取 4 张图片，经过 ADJSCC 模型做一次非训练 forward，然后计算 MSE、PSNR 和 SSIM。它只验证“测试集评估入口能跑通”，不是正式论文 evaluation，也不是论文复现完成。
+
+Evidence source: 用户提供的 eval-smoke 运行结果和代码复现 Agent 审查结论。
+
+新增模式和数据来源：
+
+- New mode: `--eval-smoke`。
+- Data source: `cifar-10-batches-py/test_batch`。
+- Image count: `4`。
+- Input shape: `(4, 32, 32, 3)`。
+- Output shape: `(4, 32, 32, 3)`。
+
+Per-image MSE:
+
+- `image_1_mse`: `2541.4853515625`。
+- `image_2_mse`: `6932.91943359375`。
+- `image_3_mse`: `4320.96240234375`。
+- `image_4_mse`: `3927.419921875`。
+
+Per-image PSNR:
+
+- `image_1_psnr_db`: `14.079927444458008`。
+- `image_2_psnr_db`: `9.72164249420166`。
+- `image_3_psnr_db`: `11.774999618530273`。
+- `image_4_psnr_db`: `12.189730644226074`。
+
+Per-image SSIM:
+
+- `image_1_ssim`: `0.09230268746614456`。
+- `image_2_ssim`: `0.07816802710294724`。
+- `image_3_ssim`: `0.09644591808319092`。
+- `image_4_ssim`: `0.11792823672294617`。
+
+Mean metrics:
+
+- `mean_mse`: `4430.69677734375`。
+- `mean_psnr_db`: `11.941575050354004`。
+- `mean_ssim`: `0.09621121734380722`。
+
+Beginner notes:
+
+- `data_batch_1` 是 CIFAR-10 训练集的一部分。之前的 metrics-smoke 主要用于检查 MSE、PSNR、SSIM 这些指标计算链路能不能跑通。
+- `test_batch` 是 CIFAR-10 测试集。正式 evaluation 应该在测试集上做，因为测试集更适合用来观察模型在“没参与训练的数据”上的表现。
+- 这次只用了 4 张测试集图片，所以仍然只是 smoke test，也就是小规模安全冒烟测试。
+- 没有正式训练 checkpoint，所以不能拿这些数字和论文表格或曲线比较。
+- 本阶段的意义是确认“测试集评估入口能跑通”：能从 `test_batch` 读图，能非训练 forward，能计算 MSE / PSNR / SSIM。
+- 这些 MSE / PSNR / SSIM 都只是 4 张图的小样本结果，不代表模型真实性能，也不能写成论文正式结果。
+
+Code review notes:
+
+- `--eval-smoke` 是显式模式，默认仍是 `check-only`。
+- 读取的是 CIFAR-10 `test_batch`。
+- 如果从 `.tar.gz` 读取，也是只读读取，不解压写文件。
+- 默认 `image_count=4`。
+- 硬上限 `MAX_EVAL_SMOKE_IMAGES=16`，避免误跑完整测试集。
+- 使用 `training=False`。
+- 没有 `fit()`。
+- 没有 eval-smoke 内的 `GradientTape()`。
+- 没有保存图片。
+- 没有保存 checkpoint。
+- 没有写 run summary。
+- 没有调用 `tf.keras.datasets.cifar10.load_data()`。
+- 没有调用官方 `adjscc_cifar10.py train/eval`。
+- 没有修改 `external/ADJSCC`。
+- 指标口径符合 evaluation protocol。
+- Clip policy 与 protocol 一致。
+
+Safety boundary confirmed:
+
+- Training was not run。
+- No images were saved。
+- No checkpoint was saved。
+- No run summary was written。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- Official train/eval was not run。
+- No formal paper metrics were produced。
+
+Current conclusion:
+
+- CIFAR-10 test split eval-smoke 通过。
+- 可以记录为：`--eval-smoke` 能从 `test_batch` 读取 4 张图，并完成非训练 forward 和 MSE / PSNR / SSIM 计算。
+- 不能记录为正式论文 evaluation 完成。
+- 不能记录为论文完整复现完成。
+- 不能用这 4 张图的指标代表模型真实性能。
+
+Next step:
+
+- 可以让 Git 管理 Agent 接手本次 Markdown 记录。
+- 下一步可以规划更完整的 test split evaluation，但必须先单独确认 checkpoint 来源、评估图片数量、SNR 设置、是否保存结果，以及是否允许写 run summary。
+
 ## Experiment Template
 
 ```text
