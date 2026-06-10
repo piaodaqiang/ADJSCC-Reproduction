@@ -23,7 +23,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_ROOT = PROJECT_ROOT / "external" / "ADJSCC"
 DEFAULT_CIFAR10_DIR = Path("/mnt/d/Research/ai-data/datasets/CIFAR10")
 DEFAULT_RUN_ROOT = Path("/mnt/d/Research/ai-data/runs/ADJSCC")
-MAX_TINY_TRAIN_STEPS = 10
+DEFAULT_CHECKPOINT_ROOT = Path("/mnt/d/Research/ai-data/checkpoints/ADJSCC")
+MAX_TINY_TRAIN_STEPS = 50
 DEFAULT_EVAL_SMOKE_IMAGES = 4  # 默认只从测试集拿4张图片进行评估
 MAX_EVAL_SMOKE_IMAGES = 16  # 设置硬上限，防止误操作变成大规模测试
 CIFAR10_BATCH_DIR = "cifar-10-batches-py"
@@ -86,6 +87,24 @@ def _module_origin(module: object) -> str:
 
 def _print_item(name: str, value: object) -> None:
     print(f"{name}: {value}")
+
+
+def _resolve_inside(path: Path, parent: Path, label: str) -> Path:
+    resolved_path = path.expanduser().resolve()
+    resolved_parent = parent.expanduser().resolve()
+    try:
+        resolved_path.relative_to(resolved_parent)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be inside {resolved_parent}; got {resolved_path}") from exc
+    return resolved_path
+
+
+def _default_checkpoint_path() -> Path:
+    return DEFAULT_CHECKPOINT_ROOT / f"tiny_train_smoke_{time.strftime('%Y%m%d-%H%M%S')}" / "ckpt"
+
+
+def _checkpoint_files_exist(checkpoint_path: Path) -> bool:
+    return checkpoint_path.with_suffix(".index").exists()
 
 
 def _ensure_project_context() -> None:
@@ -470,6 +489,16 @@ def run_eval_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None:
     # 构建模型
     model = build_model(modules, args.transmit_channel_num, args.learning_rate)
     tf.random.set_seed(args.seed)  # 设置随机种子，让随机初始化尽可能一致
+    checkpoint_used = False
+    checkpoint_path = None
+    if args.eval_checkpoint is not None:
+        checkpoint_path = _resolve_inside(args.eval_checkpoint, DEFAULT_CHECKPOINT_ROOT, "--eval-checkpoint")
+        if not _checkpoint_files_exist(checkpoint_path):
+            raise FileNotFoundError(f"No TensorFlow checkpoint index found for {checkpoint_path}")
+        load_status = model.load_weights(str(checkpoint_path))
+        if hasattr(load_status, "expect_partial"):
+            load_status.expect_partial()
+        checkpoint_used = True
 
     inputs = tf.convert_to_tensor(images, dtype=tf.float32)  # 将 Numpy 数组转换成 TensorFlow 张量 (tensor)
     targets = tf.convert_to_tensor(images, dtype=tf.float32)  # 目标图片就是原图，所以跟输入图片一样
@@ -515,7 +544,9 @@ def run_eval_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None:
     _print_item("mean_psnr_db", float(mean_psnr.numpy()))
     _print_item("mean_ssim", float(mean_ssim.numpy()))
     # 打印安全检查
-    _print_item("checkpoint_used", False)
+    _print_item("checkpoint_used", checkpoint_used)
+    if checkpoint_path is not None:
+        _print_item("checkpoint_path", checkpoint_path)
     _print_item("training_run", False)
     _print_item("data_downloaded", False)
     _print_item("official_train_eval_used", False)
@@ -526,9 +557,6 @@ def run_eval_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None:
 
 def run_tiny_train(modules: RuntimeModules, args: argparse.Namespace) -> None:
     print("== Tiny-train ==")
-
-    if args.save_checkpoint:
-        raise RuntimeError("Tiny-train does not support checkpoint saving in this stage.")
 
     if args.max_steps < 1 or args.max_steps > MAX_TINY_TRAIN_STEPS:
         raise ValueError(f"--max-steps must be between 1 and {MAX_TINY_TRAIN_STEPS}.")
@@ -574,7 +602,15 @@ def run_tiny_train(modules: RuntimeModules, args: argparse.Namespace) -> None:
     _print_item("snr_shape", tuple(snr.shape))
     _print_item("tiny_train_output_shape", tuple(outputs.shape))
     _print_item("max_steps", args.max_steps)
-    print("Tiny-train completed. No checkpoint was written and no data was downloaded.")
+    checkpoint_saved = False
+    if args.save_checkpoint:
+        checkpoint_path = args.checkpoint_path or _default_checkpoint_path()
+        checkpoint_path = _resolve_inside(checkpoint_path, DEFAULT_CHECKPOINT_ROOT, "--checkpoint-path")
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        model.save_weights(str(checkpoint_path))
+        checkpoint_saved = True
+        _print_item("checkpoint_path", checkpoint_path)
+    print("Tiny-train completed. No data was downloaded.")
 
     if args.write_run_summary:
         run_root = args.run_root.expanduser().resolve()
@@ -604,7 +640,8 @@ def run_tiny_train(modules: RuntimeModules, args: argparse.Namespace) -> None:
             "snr_db": args.snr_db,
             "losses": losses,
             "cifar10_batch_source": str(source),
-            "checkpoint_saved": False,
+            "checkpoint_saved": checkpoint_saved,
+            "checkpoint_path": str(checkpoint_path) if checkpoint_saved else None,
             "data_downloaded": False,
             "official_train_eval_used": False,
         }
@@ -627,8 +664,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cifar10-dir", type=Path, default=DEFAULT_CIFAR10_DIR)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--eval-image-count", type=int, default=DEFAULT_EVAL_SMOKE_IMAGES)
-    parser.add_argument("--max-steps", type=int, default=1)
+    parser.add_argument("--max-steps", type=int, default=10)
     parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
+    parser.add_argument("--checkpoint-path", type=Path)
+    parser.add_argument("--eval-checkpoint", type=Path)
     parser.add_argument("--write-run-summary", action="store_true")
     parser.add_argument("--save-checkpoint", action="store_true")
     parser.add_argument("--snr-db", type=float, default=10.0)
