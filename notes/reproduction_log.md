@@ -1035,3 +1035,33 @@ Result:
 Problem:
 Next step:
 ```
+
+## 2026-06-10 Phase Summary: Minimal Checkpoint Evaluation Loop
+
+Status: added a phase-level summary for the first usable CIFAR-10 minimal loop. The project can now perform a tiny training run, save a controlled checkpoint, load that checkpoint, and run `eval-smoke` on 4 images from CIFAR-10 `test_batch`.
+
+New summary document:
+
+- `results/phase_summary_2026-06-10_minimal_loop.md`
+
+Key evidence:
+
+- Tiny training ran for `10` steps with `batch_size=2` and `SNR=10 dB`.
+- Checkpoint path: `/mnt/d/Research/ai-data/checkpoints/ADJSCC/tiny_train_smoke_20260610-111436/ckpt`.
+- Eval-smoke loaded that checkpoint and evaluated 4 CIFAR-10 `test_batch` images.
+- Mean eval-smoke metrics:
+  - `mean_mse`: `4392.0146484375`
+  - `mean_psnr_db`: `11.982768058776855`
+  - `mean_ssim`: `0.09460055828094482`
+
+Boundary:
+
+- This is a minimal smoke-stage loop, not formal paper training.
+- This is not full test-set evaluation.
+- These metrics cannot be compared with the paper table or curves.
+- The checkpoint remains outside Git under `D:\Research\ai-data`.
+- No dataset, checkpoint, image, run summary JSON, cache, `.h5`, `.ckpt`, or `.keras` artifact should be committed.
+
+Code note:
+
+- Updated the wrapper safety wording so it no longer says checkpoint writes never happen. The wording now states that checkpoint writes require explicit tiny-train `--save-checkpoint` and are restricted to the external checkpoint root.

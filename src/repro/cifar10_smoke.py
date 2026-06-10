@@ -1,8 +1,9 @@
 """Safe CIFAR-10 smoke wrapper for the ADJSCC reproduction project.
 
-This module intentionally avoids dataset downloads, long training, checkpoint
-writes, image writes, and direct execution of the upstream adjscc_cifar10.py
-train/eval entrypoints.
+This module intentionally avoids dataset downloads, long training, image writes,
+and direct execution of the upstream adjscc_cifar10.py train/eval entrypoints.
+Checkpoint writes happen only when explicitly requested for tiny-train and are
+restricted to the external checkpoint directory.
 """
 
 from __future__ import annotations
@@ -552,7 +553,7 @@ def run_eval_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None:
     _print_item("official_train_eval_used", False)
     print(
         "Eval-smoke completed on 4 CIFAR-10 test images by default. This is not a formal paper evaluation; "
-        "no training, checkpoint, image, summary, or data download was produced."
+        "no training was run, and no new checkpoint, image, summary, or data download was produced."
     )
 
 def run_tiny_train(modules: RuntimeModules, args: argparse.Namespace) -> None:
@@ -692,7 +693,10 @@ def main() -> int:
         args.check_only = True
 
     print("ADJSCC CIFAR-10 smoke wrapper")
-    print("Safety: no dataset download, no train/eval, no checkpoint write, no image write.")
+    print(
+        "Safety: no dataset download, no upstream train/eval, no image write. "
+        "Checkpoint writes require explicit tiny-train --save-checkpoint and stay under the external checkpoint root."
+    )
     _ensure_project_context()
 
     if args.cifar10_check:
