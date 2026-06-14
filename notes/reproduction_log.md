@@ -1022,6 +1022,122 @@ Next step:
 - 可以把当前闭环作为期末和六级复习前的最小可交付节点，交给 Git 管理 Agent 处理 Markdown 记录和已有代码改动。
 - 后续如继续推进，再单独规划是否做更长训练、正式 checkpoint、完整 test split evaluation，以及是否保存 run summary。
 
+## 2026-06-14
+
+### 50-step tiny training + checkpoint + eval-smoke
+
+Status: 50-step 受控 tiny training 扩展结果已完成。本阶段运行 50-step tiny training，显式保存 checkpoint，再用 eval-smoke 加载 checkpoint，在 CIFAR-10 `test_batch` 的 4 张图上计算 MSE、PSNR 和 SSIM。它是在 10-step 最小闭环基础上的小幅扩展，不是正式训练，不是正式论文 evaluation，也不是论文复现完成。
+
+Evidence source: 用户提供的 50-step tiny training、checkpoint 和 eval-smoke 结果。
+
+Checkpoint path:
+
+- WSL 路径：`/mnt/d/Research/ai-data/checkpoints/ADJSCC/tiny_train_smoke_20260614-170644/ckpt`。
+- Windows 路径：`D:\Research\ai-data\checkpoints\ADJSCC\tiny_train_smoke_20260614-170644\ckpt`。
+- Checkpoint 保存到 `D:\Research\ai-data`，没有加入 Git。
+
+Tiny training 设置：
+
+- Max steps: `50`。
+- Batch size: `2`。
+- SNR: `10 dB`。
+- 是否保存 checkpoint: 是。
+- Checkpoint 是否进入 Git: 否。
+
+Loss 关键变化：
+
+- `step_1_loss`: `3472.87646484375`。
+- `step_10_loss`: `3279.12841796875`。
+- `step_20_loss`: `2268.64892578125`。
+- `step_30_loss`: `1317.4755859375`。
+- `step_40_loss`: `652.4791259765625`。
+- `step_50_loss`: `306.04559326171875`。
+
+Loss interpretation:
+
+- Loss 明显下降，说明模型在这次 tiny training 的小批量训练链路上确实发生了优化。
+- 但这不等于模型已经泛化，也不等于论文复现成功。
+- 这里的 loss 主要证明训练链路可以连续工作 50 step，并且能把训练误差压下来；它不能替代完整测试集指标。
+
+Eval-smoke 设置：
+
+- Data split: `test`。
+- Image count: `4`。
+- Checkpoint used: `true`。
+- Input shape: `(4, 32, 32, 3)`。
+- Output shape: `(4, 32, 32, 3)`。
+
+Per-image MSE:
+
+- `image_1_mse`: `3531.161865234375`。
+- `image_2_mse`: `6643.31640625`。
+- `image_3_mse`: `3506.180419921875`。
+- `image_4_mse`: `4169.91796875`。
+
+Per-image PSNR:
+
+- `image_1_psnr_db`: `12.651627540588379`。
+- `image_2_psnr_db`: `9.906953811645508`。
+- `image_3_psnr_db`: `12.682459831237793`。
+- `image_4_psnr_db`: `11.929529190063477`。
+
+Per-image SSIM:
+
+- `image_1_ssim`: `0.14745713770389557`。
+- `image_2_ssim`: `0.08354467153549194`。
+- `image_3_ssim`: `0.25806406140327454`。
+- `image_4_ssim`: `0.14494939148426056`。
+
+Mean metrics:
+
+- `mean_mse`: `4462.64453125`。
+- `mean_psnr_db`: `11.792642593383789`。
+- `mean_ssim`: `0.15850381553173065`。
+
+Comparison with 10-step smoke:
+
+- 10-step `mean_mse`: `4392.0146484375`。
+- 10-step `mean_psnr_db`: `11.982768058776855`。
+- 10-step `mean_ssim`: `0.09460055828094482`。
+- 50-step 的 `mean_ssim` 高于 10-step。
+- 但 50-step 的 `mean_mse` 和 `mean_psnr_db` 并没有明显优于 10-step。
+- 因为只评估了 4 张图，所以不能说 50-step 模型整体更好。这只是小样本 smoke 观察，不是论文结论。
+
+Beginner notes:
+
+- 50-step tiny training 可以理解成比 10-step 多踩几下油门，看看训练链路能不能更久地稳定跑下去。
+- 这次 loss 从 `3472.87646484375` 降到 `306.04559326171875`，说明这批 tiny training 确实在减小训练误差。
+- 但是训练误差下降，不等于模型在新图片上都表现更好。模型可能只是更适应当前小批量训练数据。
+- Eval-smoke 只用了 4 张 CIFAR-10 测试图，所以 MSE / PSNR / SSIM 只是小样本观察，不能代表模型真实性能。
+- 这次结果最适合写成“50-step 受控 tiny training + checkpoint + 小样本 eval-smoke 已跑通”，不能写成“论文结果复现成功”。
+
+Safety boundary confirmed:
+
+- Training was run, but only for 50-step tiny training。
+- No long training was run。
+- Checkpoint was saved under `D:\Research\ai-data`。
+- No images were saved。
+- No run summary was written。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- Official train/eval was not run。
+- No formal paper metrics were produced。
+- Checkpoint was not added to Git。
+
+Current conclusion:
+
+- 50-step 受控 tiny training 扩展已完成。
+- 可以记录为：训练链路可以连续跑 50 step，受控保存 checkpoint，并用该 checkpoint 完成 4 张 CIFAR-10 test split 图片的 eval-smoke。
+- 不能记录为正式训练完成。
+- 不能记录为正式论文 evaluation 完成。
+- 不能记录为论文复现完成。
+- 不能把本次小样本指标和论文表格或曲线直接比较。
+
+Next step:
+
+- 可以把本次 50-step 结果作为期末和六级复习前的扩展记录节点，交给 Git 管理 Agent 处理 Markdown 记录和已有代码改动。
+- 后续如果继续推进，应先单独规划是否做完整 test split evaluation、是否固定随机种子、是否多次传输平均、是否保存 run summary。
+
 ## Experiment Template
 
 ```text
