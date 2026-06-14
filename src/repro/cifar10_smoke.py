@@ -25,7 +25,7 @@ UPSTREAM_ROOT = PROJECT_ROOT / "external" / "ADJSCC"
 DEFAULT_CIFAR10_DIR = Path("/mnt/d/Research/ai-data/datasets/CIFAR10")
 DEFAULT_RUN_ROOT = Path("/mnt/d/Research/ai-data/runs/ADJSCC")
 DEFAULT_CHECKPOINT_ROOT = Path("/mnt/d/Research/ai-data/checkpoints/ADJSCC")
-MAX_TINY_TRAIN_STEPS = 50
+MAX_TINY_TRAIN_STEPS = 200
 DEFAULT_EVAL_SMOKE_IMAGES = 4  # 默认只从测试集拿4张图片进行评估
 MAX_EVAL_SMOKE_IMAGES = 16  # 设置硬上限，防止误操作变成大规模测试
 CIFAR10_BATCH_DIR = "cifar-10-batches-py"
@@ -552,7 +552,7 @@ def run_eval_smoke(modules: RuntimeModules, args: argparse.Namespace) -> None:
     _print_item("data_downloaded", False)
     _print_item("official_train_eval_used", False)
     print(
-        "Eval-smoke completed on 4 CIFAR-10 test images by default. This is not a formal paper evaluation; "
+        "Eval-smoke completed on 16 CIFAR-10 test images by default. This is not a formal paper evaluation; "
         "no training was run, and no new checkpoint, image, summary, or data download was produced."
     )
 

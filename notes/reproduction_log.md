@@ -1138,6 +1138,121 @@ Next step:
 - 可以把本次 50-step 结果作为期末和六级复习前的扩展记录节点，交给 Git 管理 Agent 处理 Markdown 记录和已有代码改动。
 - 后续如果继续推进，应先单独规划是否做完整 test split evaluation、是否固定随机种子、是否多次传输平均、是否保存 run summary。
 
+### 200-step tiny training + checkpoint + 16-image eval-smoke
+
+Status: 200-step 受控 tiny training 扩展结果已完成。本阶段运行 200-step tiny training，显式保存 checkpoint，再用 eval-smoke 加载 checkpoint，在 CIFAR-10 `test_batch` 的 16 张图上计算 MSE、PSNR 和 SSIM。它比 50-step smoke 更进一步，但仍然是受控 tiny training smoke，不是正式训练，不是正式论文 evaluation，也不是论文复现完成。
+
+Evidence source: 用户提供的 200-step tiny training、checkpoint、16-image eval-smoke 结果，以及代码改动说明。
+
+Code change notes:
+
+- `src/repro/cifar10_smoke.py` 中 `MAX_TINY_TRAIN_STEPS` 已从 `50` 改为 `200`。
+- Eval-smoke 结束提示文案已修正，不再错误写死 `4 images`。
+- `--max-steps` 默认值仍保持 `10`，避免默认长训练。
+- `eval-image-count` 上限仍为 `16`。
+
+Checkpoint path:
+
+- WSL 路径：`/mnt/d/Research/ai-data/checkpoints/ADJSCC/tiny_train_smoke_20260614-191721/ckpt`。
+- Windows 路径：`D:\Research\ai-data\checkpoints\ADJSCC\tiny_train_smoke_20260614-191721\ckpt`。
+- Checkpoint 保存到 `D:\Research\ai-data`，没有加入 Git。
+
+Tiny training 设置：
+
+- Max steps: `200`。
+- Batch size: `2`。
+- SNR: `10 dB`。
+- 是否保存 checkpoint: 是。
+- Checkpoint 是否进入 Git: 否。
+
+Loss 关键节点：
+
+- `step_1_loss`: `3473.42236328125`。
+- `step_10_loss`: `3259.82421875`。
+- `step_50_loss`: `347.51446533203125`。
+- `step_100_loss`: `20.420076370239258`。
+- `step_150_loss`: `11.049098014831543`。
+- `step_200_loss`: `7.018994331359863`。
+
+Loss interpretation:
+
+- Loss 从约 `3473` 降到约 `7`，说明模型在当前 tiny training 数据链路上优化非常明显。
+- 但 `batch_size=2`，训练规模仍小，可能存在记住小批量样本的情况。
+- Loss 下降不等于模型已经泛化，也不等于论文复现成功。
+
+Eval-smoke 设置：
+
+- Data split: `test`。
+- Image count: `16`。
+- Checkpoint used: `true`。
+- Input shape: `(16, 32, 32, 3)`。
+- Output shape: `(16, 32, 32, 3)`。
+
+Per-image MSE:
+
+```text
+[3680.9246, 7926.2642, 4025.0342, 5229.5400, 2229.2458, 2720.7056, 5195.3091, 2973.6316, 4047.8770, 4950.3491, 2832.6008, 5063.9155, 2245.2974, 5396.0581, 4124.9199, 3296.2627]
+```
+
+Per-image PSNR:
+
+```text
+[12.4712, 9.1401, 12.0831, 10.9462, 14.6492, 13.7840, 10.9747, 13.3979, 12.0585, 11.1844, 13.6089, 11.0859, 14.6181, 10.8100, 11.9766, 12.9506]
+```
+
+Per-image SSIM:
+
+```text
+[0.1090, 0.0575, 0.2684, 0.1547, 0.1845, 0.1427, 0.1650, 0.2014, 0.0942, 0.1133, 0.2096, 0.2072, 0.3329, 0.3022, 0.1036, 0.2554]
+```
+
+Mean metrics:
+
+- `mean_mse`: `4121.12109375`。
+- `mean_psnr_db`: `12.233728408813477`。
+- `mean_ssim`: `0.18134805560112`。
+
+Comparison with 50-step smoke:
+
+- 50-step eval-smoke 使用 `4` 张图，200-step eval-smoke 使用 `16` 张图，因此二者不能严格公平对比。
+- 可以谨慎观察：200-step loss 比 50-step 更低。
+- 200-step eval 使用更多测试图，评估稍微更稳。
+- 但它仍然不是完整测试集，不能说明论文级性能。
+
+Beginner notes:
+
+- 200-step tiny training 可以理解成把之前的 50-step 小测试再延长一点，看训练链路能否继续稳定下降。
+- Loss 大幅下降说明模型在当前训练小批量上“学得很快”，但也可能是在记住这些很少的训练样本。
+- Eval-smoke 从 4 张图扩展到 16 张图，比之前稍微稳一点，但仍然只是抽查，不是完整考试。
+- 本阶段最稳妥的说法是：200-step 受控 tiny training + checkpoint + 16 张 test 图 eval-smoke 已完成。不能说论文复现成功。
+
+Safety boundary confirmed:
+
+- Training was run, but only for 200-step tiny training。
+- No long training was run; this is still controlled smoke scope。
+- Checkpoint was saved under `D:\Research\ai-data`。
+- No images were saved。
+- No run summary was written。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- Official train/eval was not run。
+- No formal paper metrics were produced。
+- Checkpoint was not added to Git。
+
+Current conclusion:
+
+- 200-step 受控 tiny training 扩展已完成。
+- 可以记录为：训练链路可以连续跑 200 step，受控保存 checkpoint，并用该 checkpoint 完成 16 张 CIFAR-10 test split 图片的 eval-smoke。
+- 不能记录为正式训练完成。
+- 不能记录为正式论文 evaluation 完成。
+- 不能记录为论文复现完成。
+- 不能把本次小样本指标和论文表格或曲线直接比较。
+
+Next step:
+
+- 可以把本次 200-step 结果交给 Git 管理 Agent 处理 Markdown 记录和已有代码改动。
+- 后续如果继续推进，建议先规划完整 test split evaluation、随机种子或多次传输平均，以及是否保存 run summary。
+
 ## Experiment Template
 
 ```text
