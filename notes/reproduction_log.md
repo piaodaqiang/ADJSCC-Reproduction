@@ -1253,6 +1253,78 @@ Next step:
 - 可以把本次 200-step 结果交给 Git 管理 Agent 处理 Markdown 记录和已有代码改动。
 - 后续如果继续推进，建议先规划完整 test split evaluation、随机种子或多次传输平均，以及是否保存 run summary。
 
+### 100-image expanded eval-smoke
+
+Status: 100-image expanded eval-smoke 已完成。本阶段没有重新训练，而是复用已有 200-step checkpoint，把 eval-smoke 的 CIFAR-10 `test_batch` 图片数量从 16 扩大到 100，并计算 MSE、PSNR 和 SSIM 的 mean 指标。它可以记录为 expanded eval-smoke 成功，不能记录为正式 evaluation 完成。
+
+Evidence source: 用户提供的 100-image eval-smoke 结果和代码改动说明。
+
+Code change notes:
+
+- `src/repro/cifar10_smoke.py` 中 `MAX_EVAL_SMOKE_IMAGES` 从 `16` 改为 `100`。
+- `DEFAULT_EVAL_SMOKE_IMAGES` 仍保持 `4`。
+- 未修改 `MAX_TINY_TRAIN_STEPS`。
+- 未修改训练逻辑。
+- 未修改 checkpoint 逻辑。
+- 未修改指标计算逻辑。
+
+Checkpoint used:
+
+- WSL 路径：`/mnt/d/Research/ai-data/checkpoints/ADJSCC/tiny_train_smoke_20260614-191721/ckpt`。
+- Windows 路径：`D:\Research\ai-data\checkpoints\ADJSCC\tiny_train_smoke_20260614-191721\ckpt`。
+- 使用的是已有 200-step checkpoint。
+- 本阶段没有保存新 checkpoint。
+- Checkpoint 没有加入 Git。
+
+Eval-smoke 设置：
+
+- Data split: `test`。
+- Image count: `100`。
+- Checkpoint used: `true`。
+- Input shape: `(100, 32, 32, 3)`。
+- Output shape: `(100, 32, 32, 3)`。
+- 是否重新训练：否。
+
+Mean metrics:
+
+- `mean_mse`: `4599.38916015625`。
+- `mean_psnr_db`: `11.864448547363281`。
+- `mean_ssim`: `0.15781359374523163`。
+
+Beginner notes:
+
+- 100 张图片比 16 张图片更能观察指标是否稳定，因为样本更多，单张图片的偶然影响会稍微小一些。
+- 但 CIFAR-10 test split 一共有 10000 张图片，100 张仍然只是小样本 smoke，不是完整测试集 evaluation。
+- 本阶段没有重新训练，只是复用已有 200-step checkpoint，所以它验证的是“这个 checkpoint 能在更多测试图上跑 eval-smoke”。
+- 当前 MSE / PSNR / SSIM 不能当作论文正式指标，也不能和论文表格直接比较。
+- 更稳妥的说法是：expanded eval-smoke 成功；不能说正式 evaluation 完成。
+
+Safety boundary confirmed:
+
+- Training was not run。
+- No new checkpoint was saved。
+- Existing 200-step checkpoint was used。
+- No images were saved。
+- No run summary was written。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- Official train/eval was not run。
+- No formal paper metrics were produced。
+- Checkpoint was not added to Git。
+
+Current conclusion:
+
+- 100-image expanded eval-smoke 已完成。
+- 可以记录为：已有 200-step checkpoint 能加载，并在 100 张 CIFAR-10 test split 图片上完成 MSE / PSNR / SSIM mean 指标计算。
+- 不能记录为正式论文 evaluation 完成。
+- 不能记录为论文复现完成。
+- 不能把当前 100 张小样本指标当作论文正式指标。
+
+Next step:
+
+- 可以把本次 expanded eval-smoke 记录交给 Git 管理 Agent。
+- 后续如继续推进，建议单独规划完整 10000 张 test split evaluation、随机种子或多次传输平均、是否保存 run summary，以及是否需要更正式的 checkpoint。
+
 ## Experiment Template
 
 ```text
