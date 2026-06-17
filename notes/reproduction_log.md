@@ -1431,6 +1431,113 @@ Next step:
 - 可以把本次 500-step 记录交给 Git 管理 Agent。
 - 后续如果继续推进，建议先复盘是否需要更合理的训练数据循环、固定随机种子、多次传输平均、完整 10000 张 test split evaluation，以及是否保存更完整的 run summary。
 
+## 2026-06-17
+
+### TensorFlow GPU 审计与最小修复结果
+
+Status: TensorFlow GPU 可用性验证成功。本阶段只验证 WSL2 + `adjscc-tf` 环境中 TensorFlow 2.14 是否能识别并使用 GPU，并记录环境数据配置 Agent 的最小修复结果。它是环境层面的 GPU smoke test，不是 ADJSCC 训练，不是真实数据复现，也不是论文复现完成。
+
+Evidence source: 环境数据配置 Agent 汇报。
+
+环境范围：
+
+- WSL 发行版：`Ubuntu-ADJSCC`。
+- 系统：Ubuntu 22.04.5 LTS。
+- Conda 环境：`adjscc-tf`。
+- Python 环境路径：`/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf`。
+- GPU：NVIDIA GeForce RTX 4060 Laptop GPU。
+- Windows Driver Version: `560.94`。
+- Driver reported CUDA Version: `12.6`。
+- TensorFlow 版本：`2.14.0`。
+- TensorFlow CUDA build:
+  - `cuda_version`: `11.8`。
+  - `cudnn_version`: `8`。
+
+初始问题：
+
+- WSL2 中 `nvidia-smi` 可见 NVIDIA GeForce RTX 4060 Laptop GPU，说明 Windows 驱动和 WSL GPU 映射大体正常。
+- 但初始 `tf.config.list_physical_devices('GPU')` 返回空列表。
+- 初步判断原因是：`adjscc-tf` 环境中缺少 TensorFlow 2.14 所需的 CUDA 11.8 / cuDNN 8 用户态动态库。
+
+最小修复动作：
+
+```bash
+mamba install -c conda-forge cudatoolkit=11.8 cudnn=8
+```
+
+安装后，在当前终端临时设置：
+
+```bash
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+```
+
+Beginner notes:
+
+- `nvidia-smi` 能看到 GPU，只说明系统和驱动层面能看到显卡。
+- TensorFlow 要真正用上 GPU，还需要在当前 Python/conda 环境里找到匹配版本的 CUDA/cuDNN 动态库。
+- 这次安装 `cudatoolkit=11.8` 和 `cudnn=8`，是为了匹配 TensorFlow 2.14 的 CUDA build。
+- `LD_LIBRARY_PATH` 可以理解成告诉程序“去哪里找这些动态库”。这次是临时设置，新开终端后可能需要重新设置。
+
+验证结果：
+
+- 修复后 `tf.config.list_physical_devices('GPU')` 返回：
+
+```python
+[PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU')]
+```
+
+- 进一步运行 `1024 x 1024` 矩阵乘法后，TensorFlow 成功创建 GPU 设备：
+
+```text
+NVIDIA GeForce RTX 4060 Laptop GPU
+```
+
+- 输出形状：
+
+```text
+(1024, 1024)
+```
+
+Current conclusion:
+
+- WSL2 + `adjscc-tf` 环境下，TensorFlow 2.14 GPU 可用性验证成功。
+- 这说明 TensorFlow 不只是能看到 GPU，也能把实际矩阵计算放到 GPU 上执行。
+- 但这仍然只是环境验证成功，不代表 ADJSCC 模型训练成功，不代表真实数据复现完成，也不能写成论文复现成功。
+
+Non-blocking warnings:
+
+- `Unable to register cuDNN/cuFFT/cuBLAS factory`。
+- `TF-TRT Warning: Could not find TensorRT`。
+- `could not open file to read NUMA node`。
+
+当前判断：
+
+- 这些日志提示需要记录，但本阶段不作为阻塞项。
+- 原因是 TensorFlow 已经成功识别 GPU，并完成矩阵计算验证。
+- 后续如果进入更正式训练或性能调优阶段，可以再单独评估这些 warning 是否影响稳定性或性能。
+
+Safety boundary confirmed:
+
+- ADJSCC training was not run。
+- `external/ADJSCC/adjscc_cifar10.py` was not run。
+- No data was downloaded。
+- `external/ADJSCC` was not modified。
+- Project source code was not modified for this record。
+- No checkpoint was saved by this record。
+- No paper metrics were produced。
+- Git was not committed。
+
+Next step:
+
+- 如果后续继续使用 GPU，新开终端后可能需要重新执行：
+
+```bash
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+```
+
+- 后续可以单独规划是否把该设置写入 conda activate 脚本，但本阶段先不直接修改。
+- 进入 ADJSCC 实验时仍应从小规模 smoke 开始，例如 GPU 环境下的安全 wrapper 检查、小 batch forward 或 tiny training，不要因为 GPU 验证成功就直接启动长训练。
+
 ## Experiment Template
 
 ```text
