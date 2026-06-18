@@ -1630,6 +1630,78 @@ Next step:
 - 可以把本次 GPU fake-forward 记录交给 Git 管理 Agent。
 - 后续如果继续推进，建议单独规划 GPU real-batch-forward，再规划 GPU tiny training；每一步继续保持明确边界，不要直接跳到长训练。
 
+### WSL2 + adjscc-tf TensorFlow GPU real-batch-forward 验证
+
+Status: GPU 环境下 ADJSCC smoke wrapper 的 `--real-batch-forward` 已通过。本阶段验证新 shell 激活 `adjscc-tf` 后，无需手动 export `LD_LIBRARY_PATH` / `XLA_FLAGS`，即可读取真实 CIFAR-10 小批量并完成 ADJSCC forward。它仍然不是训练，不保存 checkpoint，也不产生论文指标。
+
+Evidence source: 用户提供的 GPU real-batch-forward 自动环境验证结果。
+
+环境基础状态：
+
+- WSL 发行版：`Ubuntu-ADJSCC`。
+- Conda 环境：`adjscc-tf`。
+- Conda 环境路径：`/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf`。
+- TensorFlow GPU 环境已经稳定到 real-batch-forward 级别。
+- 新 shell 激活 `adjscc-tf` 后，无需手动 export `LD_LIBRARY_PATH` / `XLA_FLAGS`。
+
+Conda activate/deactivate scripts:
+
+- Activate 脚本：`/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/etc/conda/activate.d/adjscc_cuda_libs.sh`。
+- Deactivate 脚本：`/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/etc/conda/deactivate.d/adjscc_cuda_libs.sh`。
+
+自动环境变量：
+
+- `LD_LIBRARY_PATH` 自动包含：`$CONDA_PREFIX/lib`。
+- `XLA_FLAGS` 自动包含：`--xla_gpu_cuda_data_dir=$CONDA_PREFIX`。
+- `libdevice` 标准路径存在：`$CONDA_PREFIX/nvvm/libdevice/libdevice.10.bc`。
+
+GPU real-batch-forward command:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python -m src.repro.cifar10_smoke --real-batch-forward
+```
+
+关键输出：
+
+- `cifar10_batch_source`: `cifar-10-batches-py/data_batch_1`。
+- `real_input_shape`: `(2, 32, 32, 3)`。
+- `snr_shape`: `(2, 1)`。
+- `real_output_shape`: `(2, 32, 32, 3)`。
+- `real_output_dtype`: `float32`。
+- `Real-batch-forward completed. No training was run, no checkpoint was written, and no data was downloaded.`。
+
+Beginner notes:
+
+- `fake-forward` 用的是随机假图，主要检查模型结构和 GPU 环境能不能跑一次前向。
+- `real-batch-forward` 用的是真实 CIFAR-10 小批量，所以它比 fake-forward 更接近真实实验入口。
+- 这一步说明 GPU 环境不仅能跑模型，还能读取真实 CIFAR-10 batch，并完成 ADJSCC forward。
+- 这里的 forward 只是“把图片送进模型，再拿到输出”，不会更新模型参数。
+- 因此它仍然不是训练，没有保存 checkpoint，也没有产生 PSNR、SSIM、MS-SSIM 等论文指标。
+
+Current conclusion:
+
+- GPU real-batch-forward 已通过。
+- 可以记录为：自动 CUDA/XLA 环境变量在新 shell 中生效，真实 CIFAR-10 小批量可以在 GPU 环境下进入 ADJSCC smoke wrapper 并完成 forward。
+- 不能记录为：GPU training 已完成。
+- 不能记录为：论文 evaluation 已完成。
+- 不能记录为：论文复现成功。
+
+Safety boundary confirmed:
+
+- Training was not run。
+- No checkpoint was saved。
+- No images were saved。
+- No run summary was written。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- Git was not committed。
+- No paper metrics were produced。
+
+Next step:
+
+- 可以把本次 GPU real-batch-forward 记录交给 Git 管理 Agent。
+- 下一步可以单独规划 GPU tiny training 对照实验，继续使用严格步数限制、外部 checkpoint 路径和明确的 no-paper-result 边界。
+
 ## Experiment Template
 
 ```text
