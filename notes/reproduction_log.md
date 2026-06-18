@@ -1538,6 +1538,98 @@ export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 - 后续可以单独规划是否把该设置写入 conda activate 脚本，但本阶段先不直接修改。
 - 进入 ADJSCC 实验时仍应从小规模 smoke 开始，例如 GPU 环境下的安全 wrapper 检查、小 batch forward 或 tiny training，不要因为 GPU 验证成功就直接启动长训练。
 
+## 2026-06-18
+
+### WSL2 + adjscc-tf TensorFlow GPU fake-forward 验证
+
+Status: GPU 环境下 ADJSCC smoke wrapper 的 `--fake-forward` 已通过。本阶段记录 conda activate/deactivate 脚本已经固化 CUDA/cuDNN 和 XLA 相关环境变量，新 shell 中无需手动 export `LD_LIBRARY_PATH` / `XLA_FLAGS`。这仍然只是 GPU 环境下的 fake-forward smoke，不是真实 CIFAR-10 forward，不是训练，也不是论文复现完成。
+
+Evidence source: 用户提供的 GPU 环境修复和 fake-forward 验证结果。
+
+环境基础状态：
+
+- WSL 发行版：`Ubuntu-ADJSCC`。
+- Conda 环境：`adjscc-tf`。
+- TensorFlow: `2.14.0`。
+- GPU: NVIDIA GeForce RTX 4060 Laptop GPU。
+- WSL 中 `nvidia-smi` 可见 GPU。
+- 已安装 `cudatoolkit=11.8` 和 `cudnn=8`。
+- TensorFlow GPU 列表非空：
+
+```python
+[PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU')]
+```
+
+Conda activate/deactivate scripts:
+
+- Activate 脚本：`/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/etc/conda/activate.d/adjscc_cuda_libs.sh`。
+- Deactivate 脚本：`/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/etc/conda/deactivate.d/adjscc_cuda_libs.sh`。
+- Activate 脚本负责自动设置 `LD_LIBRARY_PATH` 和 `XLA_FLAGS`。
+
+关键路径：
+
+- `LD_LIBRARY_PATH` 包含：`/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/lib`。
+- `XLA_FLAGS` 指向：`--xla_gpu_cuda_data_dir=/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf`。
+- `libdevice` 路径：`/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/nvvm/libdevice/libdevice.10.bc`。
+
+Beginner notes:
+
+- `LD_LIBRARY_PATH` 可以理解成“动态库搜索路线图”。它告诉 TensorFlow 去哪里找 CUDA/cuDNN 这些 GPU 运行需要的库文件。
+- `XLA_FLAGS` 是给 TensorFlow/XLA 的提示，告诉它去哪里找 `libdevice`。`libdevice` 是一些 GPU 编译/执行时会用到的底层数学和设备函数。
+- 把这些设置写进 conda activate 脚本后，以后进入 `adjscc-tf` 环境时会自动设置，不需要每次新开 shell 都手动 export。
+
+GPU fake-forward command:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python -m src.repro.cifar10_smoke --fake-forward
+```
+
+关键输出：
+
+- `fake_input_shape`: `(2, 32, 32, 3)`。
+- `snr_shape`: `(2, 1)`。
+- `fake_output_shape`: `(2, 32, 32, 3)`。
+- `fake_output_dtype`: `float32`。
+- `Fake-forward completed`。
+
+Fake-forward interpretation:
+
+- `--fake-forward` 只使用假输入检查模型前向链路能不能跑通。
+- 输入 shape 是 `(2, 32, 32, 3)`，表示 2 张假的 32x32 RGB 图片。
+- 输出 shape 仍是 `(2, 32, 32, 3)`，说明模型输出保持了图片形状。
+- 这说明 GPU 环境下 ADJSCC smoke wrapper 的前向链路已经跑通。
+- 但它不加载真实 CIFAR-10，不训练，不保存 checkpoint，也不产生论文指标。
+
+Current conclusion:
+
+- GPU 环境下 ADJSCC smoke wrapper 的 fake-forward 已通过。
+- 新 shell 中无需手动 export `LD_LIBRARY_PATH` / `XLA_FLAGS`。
+- 这说明 GPU 环境修复已经从“TensorFlow 能看到 GPU”推进到“项目安全 wrapper 的 fake-forward 能跑通”。
+- 但当前还没有验证 GPU real-batch-forward，也没有验证 GPU tiny training。
+
+Warnings:
+
+- 仍有 NUMA、`ptxas` / `nvlink` 等警告。
+- 当前判断：这些警告需要记录，但 fake-forward 已通过，暂时不阻塞 smoke 阶段。
+- 后续如果进入真实数据 forward、tiny training 或更长训练，再继续观察这些 warning 是否影响稳定性或性能。
+
+Safety boundary confirmed:
+
+- Real-batch-forward was not run。
+- Tiny-train was not run。
+- Long training was not run。
+- No new data was downloaded。
+- No checkpoint was saved。
+- No images were saved。
+- No run summary was written。
+- `external/ADJSCC` was not modified。
+- No paper metrics were produced。
+
+Next step:
+
+- 可以把本次 GPU fake-forward 记录交给 Git 管理 Agent。
+- 后续如果继续推进，建议单独规划 GPU real-batch-forward，再规划 GPU tiny training；每一步继续保持明确边界，不要直接跳到长训练。
+
 ## Experiment Template
 
 ```text
