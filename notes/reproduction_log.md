@@ -1702,6 +1702,118 @@ Next step:
 - 可以把本次 GPU real-batch-forward 记录交给 Git 管理 Agent。
 - 下一步可以单独规划 GPU tiny training 对照实验，继续使用严格步数限制、外部 checkpoint 路径和明确的 no-paper-result 边界。
 
+## 2026-06-20
+
+### GPU 50-step tiny training + checkpoint + 100-image eval-smoke
+
+Status: 第一个 GPU 50-step tiny training 闭环已完成。本阶段先修复 GPU tiny training 中缺少 `ptxas` 的问题，然后运行 GPU 50-step tiny training，保存 checkpoint，再加载该 checkpoint 对 CIFAR-10 `test_batch` 的 100 张图片运行 eval-smoke。它验证的是 GPU 训练链路，不是正式训练，不是正式论文 evaluation，也不是论文复现完成。
+
+Evidence source: 用户提供的 GPU tiny training、checkpoint 和 eval-smoke 结果。
+
+环境修复记录：
+
+- 初次 GPU tiny training 因缺少 `ptxas` 失败。
+- 报错核心：
+
+```text
+ptxas returned an error
+Failed to launch ptxas
+Aborted (core dumped)
+```
+
+- 修复方式：
+
+```bash
+conda install -c nvidia "cuda-nvcc=11.8.*"
+```
+
+- 安装后 `which ptxas`：
+
+```text
+/home/piaodaqiang/miniforge3-adjscc/envs/adjscc-tf/bin/ptxas
+```
+
+- `ptxas --version`：
+
+```text
+Cuda compilation tools, release 11.8, V11.8.89
+```
+
+Beginner notes:
+
+- `ptxas` 是 NVIDIA CUDA 编译工具。TensorFlow/XLA 在某些 GPU 图编译时会用到它。
+- `fake-forward` 和 `real-batch-forward` 可能已经能通过，因为它们只是前向链路验证。
+- 但 tiny training 会走到更多 GPU 编译和训练相关路径，所以缺少 `ptxas` 时，前向 smoke 通过也不代表 GPU tiny training 一定能通过。
+
+GPU 50-step training 设置：
+
+- TensorFlow: `2.14.0`。
+- GPU: RTX 4060。
+- Batch size: `2`。
+- SNR: `10 dB`。
+- Max steps: `50`。
+- Checkpoint WSL 路径：`/mnt/d/Research/ai-data/checkpoints/ADJSCC/tiny_train_smoke_20260620-210955/ckpt`。
+- Checkpoint Windows 路径：`D:\Research\ai-data\checkpoints\ADJSCC\tiny_train_smoke_20260620-210955\ckpt`。
+- Checkpoint 保存到 `D:\Research\ai-data`，没有加入 Git。
+
+Loss 关键节点：
+
+- `step_1_loss`: `3471.749267578125`。
+- `step_10_loss`: `3247.22998046875`。
+- `step_50_loss`: `381.5732421875`。
+
+Loss interpretation:
+
+- 50 step 很短，只能说明 GPU tiny training 链路可以跑起来，并且训练误差在这次小训练里下降。
+- 它不能说明模型已经训练好，也不能说明模型泛化能力已经变好。
+- 本阶段最重要的结论不是指标好坏，而是 GPU 训练、checkpoint 保存、checkpoint 加载和 100-image eval-smoke 这条链路已经打通。
+
+Eval-smoke 设置：
+
+- Data split: `test`。
+- Image count: `100`。
+- Checkpoint used: `true`。
+- Input shape: `(100, 32, 32, 3)`。
+- Output shape: `(100, 32, 32, 3)`。
+
+100-image eval-smoke mean:
+
+- `mean_mse`: `4709.00732421875`。
+- `mean_psnr_db`: `11.753862380981445`。
+- `mean_ssim`: `0.14604239165782928`。
+
+Evaluation interpretation:
+
+- 100 张测试图比 4 张或 16 张更有参考价值，但 CIFAR-10 test split 一共有 10000 张图片，所以这仍然不是完整测试集 evaluation。
+- 这些 MSE / PSNR / SSIM 只能作为 GPU 训练闭环 smoke 的小样本观察，不能作为论文正式指标。
+- 不建议和 CPU 50-step 指标做严格公平对比，因为环境、随机性、GPU/CPU 执行路径和运行条件都可能不同。
+
+Current conclusion:
+
+- 这是 GPU 上第一个 tiny training 闭环。
+- 它证明 GPU 能完成训练、保存 checkpoint、加载 checkpoint，并在 100 张 CIFAR-10 test split 图片上完成 eval-smoke。
+- 不能记录为正式训练完成。
+- 不能记录为正式论文 evaluation 完成。
+- 不能记录为论文复现成功。
+
+Safety boundary confirmed:
+
+- Training was run, but only for GPU 50-step tiny training。
+- No long training was run。
+- Checkpoint was saved under `D:\Research\ai-data`。
+- No images were saved。
+- No run summary was written。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- Official train/eval was not run。
+- No formal paper metrics were produced。
+- Checkpoint was not added to Git。
+
+Next step:
+
+- 可以把本次 GPU 50-step tiny training 记录交给 Git 管理 Agent。
+- 后续如果继续推进，建议规划 GPU 200-step 或 500-step 对照实验，但仍要保持小步数、外部 checkpoint、明确评估样本数量和“不是论文结果”的记录边界。
+
 ## Experiment Template
 
 ```text
@@ -1745,3 +1857,4 @@ Boundary:
 Code note:
 
 - Updated the wrapper safety wording so it no longer says checkpoint writes never happen. The wording now states that checkpoint writes require explicit tiny-train `--save-checkpoint` and are restricted to the external checkpoint root.
+
