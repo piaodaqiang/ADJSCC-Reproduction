@@ -1814,6 +1814,101 @@ Next step:
 - 可以把本次 GPU 50-step tiny training 记录交给 Git 管理 Agent。
 - 后续如果继续推进，建议规划 GPU 200-step 或 500-step 对照实验，但仍要保持小步数、外部 checkpoint、明确评估样本数量和“不是论文结果”的记录边界。
 
+## 2026-06-22
+
+### GPU 200-step tiny training + checkpoint + 100-image eval-smoke
+
+Status: GPU 200-step tiny training + checkpoint + 100-image eval-smoke 已完成。本阶段运行 GPU 200-step tiny training，保存 checkpoint，再加载该 checkpoint 对 CIFAR-10 `test_batch` 的 100 张图片运行 eval-smoke。它是 GPU 受控 smoke 结果，不是正式训练，不是完整测试集 evaluation，也不是论文复现完成。
+
+Evidence source: 用户提供的 GPU 200-step tiny training、checkpoint 和 eval-smoke 结果。
+
+环境状态：
+
+- TensorFlow 能识别 GPU。
+- `ptxas` 可用。
+- Git 运行前后均干净。
+- 未修改 `external/ADJSCC`。
+- 未下载新数据。
+
+Checkpoint path:
+
+- WSL 路径：`/mnt/d/Research/ai-data/checkpoints/ADJSCC/tiny_train_smoke_20260622-214536/ckpt`。
+- Windows 路径：`D:\Research\ai-data\checkpoints\ADJSCC\tiny_train_smoke_20260622-214536\ckpt`。
+- Checkpoint 保存到 `D:\Research\ai-data`，没有加入 Git。
+
+GPU 200-step training 设置：
+
+- Batch size: `2`。
+- SNR: `10 dB`。
+- Max steps: `200`。
+- Checkpoint saved: `true`。
+
+Loss 关键节点：
+
+- `step_1_loss`: `3474.34716796875`。
+- `step_10_loss`: `3312.654296875`。
+- `step_50_loss`: `304.3578796386719`。
+- `step_100_loss`: `13.667617797851562`。
+- `step_200_loss`: `5.290384769439697`。
+
+Loss interpretation:
+
+- Loss 明显下降，说明 GPU tiny training 链路继续有效，训练步骤确实在更新模型参数并降低训练误差。
+- 但 `batch_size=2` 很小，200 step 仍属于 tiny training，不能说明模型已经正式训练完成，也不能说明泛化能力达到论文水平。
+
+100-image eval-smoke 设置：
+
+- Data split: `test`。
+- Image count: `100`。
+- Checkpoint used: `true`。
+- Input shape: `(100, 32, 32, 3)`。
+- Output shape: `(100, 32, 32, 3)`。
+
+100-image eval-smoke mean:
+
+- `mean_mse`: `4613.39599609375`。
+- `mean_psnr_db`: `11.875377655029297`。
+- `mean_ssim`: `0.15711666643619537`。
+
+Comparison with GPU 50-step smoke:
+
+- GPU 50-step `mean_mse`: `4709.0073`。
+- GPU 50-step `mean_psnr_db`: `11.7539`。
+- GPU 50-step `mean_ssim`: `0.1460`。
+- GPU 200-step `mean_mse`: `4613.3960`。
+- GPU 200-step `mean_psnr_db`: `11.8754`。
+- GPU 200-step `mean_ssim`: `0.1571`。
+
+Comparison interpretation:
+
+- 相比 GPU 50-step，GPU 200-step 在 100-image smoke eval 上观察到轻微改善：MSE 略低，PSNR 和 SSIM 略高。
+- 这只能谨慎写成：在当前 GPU smoke 设置下，200-step 相比 50-step 在 100-image 小样本评估中指标略好。
+- 不能写成论文复现成功，因为 `batch_size=2`、`image_count=100`，仍然不是正式训练，也不是完整 CIFAR-10 test split evaluation。
+
+Beginner notes:
+
+- 这一步可以理解成：前面 GPU 50-step 证明“GPU 训练链路能跑通”，这次 GPU 200-step 是把这个小训练稍微延长，看看链路是否继续稳定。
+- Loss 从约 `3474` 降到约 `5.29`，说明在 tiny training 的训练样本上误差被压低了。
+- 100 张测试图的指标比 50-step 略好，是一个小样本 smoke 观察；它有参考价值，但不能当作论文表格里的正式结果。
+
+Safety boundary confirmed:
+
+- Training was run, but only for GPU 200-step tiny training。
+- No long training was run。
+- Checkpoint was saved under `D:\Research\ai-data`。
+- Checkpoint was not added to Git。
+- No images were saved。
+- No run summary was written。
+- No new data was downloaded。
+- `external/ADJSCC` was not modified。
+- Official train/eval was not run。
+- No formal paper metrics were produced。
+
+Next step:
+
+- 可以把本次 GPU 200-step 记录交给 Git 管理 Agent。
+- 后续如果继续推进，可以规划 GPU 500-step 对照实验或更完整的 evaluation protocol，但仍需明确训练步数、checkpoint 外部路径、评估样本数量，并继续声明 smoke 结果不是论文正式指标。
+
 ## Experiment Template
 
 ```text
